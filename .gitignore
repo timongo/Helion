@@ -47,3 +47,20 @@ frc
 
 # backup files
 *~
+
+# Other unwanted files
+#quad2d.f90#
+Equilibrium_xS0.5.npz
+frc_almostok.f90
+frc_bak.f90
+mesh.f90
+psielong.npz
+quadpack.f90
+quadpack_double
+quadpack_double.f90
+quadpack_double_test.f90
+quadpack_double_test.txt
+quadpack_test
+quadpack_test.f90
+quadpack_test.txt
+readbinpython.f90
