@@ -1,0 +1,12 @@
+ &frc
+ nr = 300,
+ nz = 200,
+ length = 10.,
+ b = 1.5,
+ omegai = 1.e-6,
+ ! pprime = 27.60,
+ pprime = 10.,
+ ntsmax = 10000,
+ tol = 1.e-8,
+ psimax = 0.0156,
+/

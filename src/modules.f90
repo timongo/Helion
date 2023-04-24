@@ -1,0 +1,30 @@
+module globals
+  use prec_const
+
+  integer :: nr,nz
+  integer :: nrtot,nztot
+  integer :: ntot
+  integer :: nrguess,nzguess
+  integer :: nrguesstot,nzguesstot
+  real(rkind) :: lguess
+  real(rkind) :: length
+  real(rkind) :: psiedge
+  real(rkind) :: current
+
+  real(rkind) :: xs,b
+  real(rkind) :: pprime
+  real(rkind) :: omegai
+  integer :: ntsmax
+  real(rkind) :: tol
+  real(rkind) :: psimax
+
+  real(rkind) :: deltar,deltaz
+  real(rkind) :: drguess,dzguess
+  real(rkind), allocatable, dimension(:) :: R,Z
+  real(rkind), allocatable, dimension(:,:) :: RR,ZZ
+  real(rkind), allocatable, dimension(:,:) :: psi
+  real(rkind), allocatable, dimension(:,:) :: psiguess
+  real(rkind), allocatable, dimension(:,:) :: psiguess_read
+
+end module globals
+

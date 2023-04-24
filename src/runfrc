@@ -1,0 +1,12 @@
+#!/bin/sh                                                                
+#SBATCH --job-name=frc
+#SBATCH --time=36000
+#SBATCH --ntasks=1         # MPI tasks
+#SBATCH --cpus-per-task=32  # virtual cores
+#SBATCH -o frc.%J.out
+#SBATCH -e frc.%J.err
+
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+time mpiexec -np $SLURM_NTASKS ./frc
