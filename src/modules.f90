@@ -11,7 +11,6 @@ module globals
   real(rkind) :: psiedge
   real(rkind) :: current
 
-  real(rkind) :: xs,b
   real(rkind) :: pprime
   real(rkind) :: omegai
   integer :: ntsmax

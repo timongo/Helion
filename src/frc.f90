@@ -16,6 +16,7 @@ program main
 end program main
 
 function ppfun(psiv)
+  ! Pprime function in Grad-Shafranov equation
   use globals
   real(rkind) :: psiv,ppfun
 
@@ -36,6 +37,13 @@ function ppfun(psiv)
 end function ppfun
 
 subroutine ADI_Solve(psig,psi2)
+  ! Alternate direction implicit algorithm
+  ! psig is guess
+  ! psi2 is converged solution
+  ! omega is the time step
+  ! C is a Lagrange multiplier
+  ! I,I0 are total currents
+  ! N, Nstar, norm are norms
   use prec_const
   use globals
   implicit none
@@ -62,6 +70,7 @@ subroutine ADI_Solve(psig,psi2)
   real(rkind) :: dnrm2
   real(rkind) :: psimaxcur
 
+  ! Maximum time step
   omegamax = 1.e-1_rkind
 
   omega = omegai
@@ -80,20 +89,26 @@ subroutine ADI_Solve(psig,psi2)
   ! print*, 'psitarget = ', psimax
 
   do while (k.lt.ntsmax .and. dtpsi.ge.tol)
+     ! Carrying out two half steps
      call ADI_Step_omp(omega,C,psig,psi1)
      call ADI_Step_omp(omega,C,psi1,psi2)
+     ! Carrying out one full step
      call ADI_Step_omp(omega*2._rkind,C,psig,psi2_star)
-
+     
+     ! Computing |psig - psi1| in N
      call dcopy(ntot,psig,1,aux,1)
      call daxpy(ntot,-1._rkind,psi1,1,aux,1)
      N = dnrm2(ntot,aux,1)
 
+     ! Computing |psi2 - psi2_star| in Nstar
      call dcopy(ntot,psi2,1,aux,1)
      call daxpy(ntot,-1._rkind,psi2_star,1,aux,1)
      Nstar = dnrm2(ntot,aux,1)
 
+     ! ratio will we used to determine whether omega increases or decreases
      ratio = Nstar/N
 
+     ! tracking convergence in terms of |dpsi/dt|
      dtpsi = N/(norm*omega)
 
      write(*,'(I6,4E12.4)') k+1,omega,C,ratio,dtpsi/tol
@@ -101,6 +116,7 @@ subroutine ADI_Solve(psig,psi2)
      if (ratio.le.0.05_rkind) then
         k=k+1
         call dcopy(ntot,psi2,1,psig,1)
+        ! updating time step
         omega = min(omega*4._rkind,omegamax)
         call TotalCurrent(psi2,1._rkind,I)
         C = I0/I
@@ -109,6 +125,7 @@ subroutine ADI_Solve(psig,psi2)
      elseif (ratio.gt.0.05_rkind .and. ratio.le.0.1_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
+        ! updating time step
         omega = min(omega*2._rkind,omegamax)
         call TotalCurrent(psi2,1._rkind,I)
         C = I0/I        
@@ -124,6 +141,7 @@ subroutine ADI_Solve(psig,psi2)
      elseif (ratio.gt.0.3_rkind .and. ratio.le.0.4_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
+        ! updating time step
         omega = omega/2._rkind
         call TotalCurrent(psi2,1._rkind,I)
         C = I0/I        
@@ -132,14 +150,14 @@ subroutine ADI_Solve(psig,psi2)
      elseif (ratio.gt.0.4_rkind .and. ratio.le.0.6_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
+        ! updating time step
         omega = omega/4._rkind
         call TotalCurrent(psi2,1._rkind,I)
         C = I0/I        
         ! psimaxcur = maxval(psi2)
         ! C = C/(psimaxcur/psimax)
      elseif (ratio.gt.0.6_rkind) then
-        k = k+1
-        call dcopy(ntot,psi2,1,psig,1)
+        ! updating time step without changing the starting field
         omega = omega/16._rkind
      end if
   end do
@@ -151,6 +169,8 @@ subroutine ADI_Solve(psig,psi2)
 end subroutine ADI_Solve
 
 subroutine TotalCurrent(psi,PP,I)
+  ! Computing total current with a not very refined algorithm
+  ! If a node has psi>0, a contribution R*pprime*dr*dz is added
   use prec_const
   use globals, only: nrtot,nztot,R,deltar,deltaz
   implicit none
@@ -214,9 +234,12 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
   dz1 = 1._rkind/deltaz
   dr2 = dr1**2
   dz2 = dz1**2
-
+  
+  ! !!!!!!!!!!!!!
   ! Psistar
+  ! !!!!!!!!!!!!!
 
+  ! Current term, rhs of GS equation, R jphi = R**2 pprime
   cur = 0._rkind
 
   do ir=1,nrtot
@@ -228,15 +251,19 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
      end do
   end do
 
+  ! ar is left of diagnoal of matrix
   ar = 0._rkind
+  ! br is diagnoal of matrix
   br = 1._rkind+omega*2._rkind*dr2
+  ! cr is right of diagnoal of matrix
   cr = 0._rkind
 
   do ir=1,nr-1
      ar(ir) = -omega*(dr2 + 0.5_rkind*dr1/R(ir+2))
      cr(ir) = -omega*(dr2 - 0.5_rkind*dr1/R(ir+1))
   end do
-
+  
+  ! psistar corresponds to the first half step where only radial operator is implicit
   psistar = 0._rkind  
   !$OMP PARALLEL DEFAULT(SHARED) &
   !$OMP          PRIVATE(iz,DZpsiold,dr,xr)
@@ -251,13 +278,17 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
   !$OMP END DO
   !$OMP END PARALLEL
 
+  ! Applying boundary conditions
   psistar(1,:) = 0._rkind
   psistar(nr+2,:) = psiedge
   psistar(:,1) = psiedge*R**2
   psistar(:,nz+2) = psiedge*R**2
 
+  ! !!!!!!!!!!!!!
   ! Psinew
+  ! !!!!!!!!!!!!!
 
+  ! Current term
   cur = 0._rkind
 
   do ir=1,nrtot
@@ -269,10 +300,14 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
      end do
   end do
 
+  ! az is left of diagnoal of matrix
   az = -omega*dz2
+  ! bz is diagnoal of matrix
   bz = 1._rkind+omega*2._rkind*dz2
+  ! cz is right of diagnoal of matrix
   cz = -omega*dz2
 
+  ! psinew corresponds to the second half step where only z-part of the operator is implicit
   psinew = 0._rkind
   !$OMP PARALLEL DEFAULT(SHARED) &
   !$OMP          PRIVATE(ir,DRpsistar,dz,xz)
@@ -289,7 +324,7 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
   !$OMP END DO
   !$OMP END PARALLEL
 
-
+  ! boundary conditions
   psinew(1,:) = 0._rkind
   psinew(nr+2,:) = psiedge
   psinew(:,1) = psiedge*R**2
@@ -298,6 +333,7 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
 end subroutine ADI_Step_omp
 
 subroutine TDMA_Solver(a,b,c,d,x,n)
+  ! Thomas TriDiagonal Matrix Algorithm
   use prec_const
   implicit none
   integer, intent(in) :: n
@@ -346,22 +382,28 @@ subroutine readnamelist
 
   nr = 100
   nz = 100
+  ! aspect ratio length/radius
   length = 1._rkind
+  ! Psi boundary condition (default corresponds to unit field)
   psiedge = -0.5_rkind
   
-  xs = 0.5_rkind
-  b  = 0.5_rkind
-
-  pprime = 19.823216814706463_rkind
+  ! initial value for LagrangeMultiplier
+  pprime = 20._rkind
+  ! maximum number of iterations
   ntsmax = 500
+  ! tolerance for final convergence
   tol = 1.e-8_rkind
+  ! initial value of timestep in ADI algorithm
   omegai = 1.e-2_rkind
 
+  ! psimax target on axis (not used yet)
   psimax = 0.05_rkind
 
+  ! define namelist
   namelist /frc/ &
-       nr,nz,length,psiedge,xs,b,pprime,ntsmax,tol,omegai,psimax
+       nr,nz,length,psiedge,pprime,ntsmax,tol,omegai,psimax
 
+  ! read namelist
   mp = 101
   open(mp, file ='nlfrc', delim = 'apostrophe', &
        FORM = 'formatted', action = 'read', status='old')
@@ -375,6 +417,7 @@ subroutine readnamelist
 end subroutine readnamelist
 
 subroutine initialization
+  ! allocate arrays
   use globals
   implicit none
   integer :: i
@@ -382,12 +425,14 @@ subroutine initialization
   allocate(R(nrtot),Z(nztot),RR(nrtot,nztot),ZZ(nrtot,nztot), &
        &   psi(nrtot,nztot),psiguess(nrtot,nztot))
 
+  ! define R arrays and increment
   deltar = 1._rkind/real(nrtot-1,rkind)
   do i=1,nrtot
      R(i) = real(i-1,rkind)/real(nrtot-1,rkind)
      RR(i,:) = real(i-1,rkind)/real(nrtot-1,rkind)
   end do
 
+  ! define Z arrays and increment
   deltaz = 1._rkind/real(nztot-1,rkind)*length
   do i=1,nztot
      Z(i) = real(i-1,rkind)/real(nztot-1,rkind)*length - length/2._rkind
@@ -396,11 +441,11 @@ subroutine initialization
 
   call read_guess
 
-  ! call Steinhauer(xs,b,psiguess,pprime)
-
 end subroutine initialization
 
 subroutine read_guess
+  ! read guess array
+  ! assumes the guess was generated with np.array([...]).tofile('guess.bin') command in python
   use globals
   implicit none
   real(rkind), dimension(3) :: sizes_dpr
@@ -418,8 +463,6 @@ subroutine read_guess
   nzguesstot = int(sizes_dpr(1))
   nrguesstot = int(sizes_dpr(2))
   lguess = sizes_dpr(3)
-  ! nrguesstot = nrguess+2
-  ! nzguesstot = nzguess+2
 
   print*, nrguesstot,nzguesstot
 
@@ -427,8 +470,8 @@ subroutine read_guess
   dzguess = 1._rkind/real(nzguesstot-1,rkind)*length
 
   if (lguess.ne.length) then
-     print*, 'length must be equal to that of the guess'
-     print*, lguess, length
+     print*, "length is not equal to that of the guess. Are you sure you know what you're doing?"
+     write(*,'(A,E12.4,A,E12.4)') 'Length = ', length, 'while guess length is', lguess
      ! stop
   end if
 
@@ -439,8 +482,10 @@ subroutine read_guess
   close(mp)
 
   if (nr.eq.nrguess .and. nz.eq.nzguess) then
+     ! if sizes are the same just reding is enough
      psiguess = transpose(psig)
   else
+     ! else interpolation is required
      allocate(psiguess_read(nrguesstot,nzguesstot))
      psiguess_read = transpose(psig)
      call interpolate_guess
@@ -459,6 +504,7 @@ subroutine interpolate_guess
   integer :: ir,iz,irguess,izguess
   real(rkind) :: x,y,t,u
 
+  ! simple bilinear interpolation
   do ir=2,nr+1
      x = R(ir)/drguess
      irguess = floor(x)+1
@@ -482,35 +528,8 @@ subroutine interpolate_guess
 
 end subroutine interpolate_guess
 
-subroutine Steinhauer(xs_SH,b_SH,psi_SH,PP_SH)
-  use globals
-  implicit none
-  real(rkind), intent(in) :: xs_SH,b_SH
-  real(rkind), dimension(nrtot,nztot), intent(out) :: psi_SH
-  real(rkind), intent(out) :: PP_SH
-  real(rkind) :: N
-  real(rkind) :: eps
-  real(rkind) :: D0,D1
-  real(rkind), dimension(nrtot,nztot) :: D0term,D1term
-  real(rkind) :: Bw,B0,B1
-
-  N = 1._rkind/(1._rkind+(0.8_rkind+xs_SH**2)*(b_SH-1._rkind)**2)
-  eps = 1._rkind/b_SH
-  D0 = (-8._rkind+eps**4)/(4._rkind*(2._rkind+eps**2))
-  D1 = -eps**2*(4._rkind+eps**2)/(4._rkind*(2._rkind+eps**2))
-  Bw = 1._rkind/(1._rkind-xs_SH**2)
-  B0 = Bw*sqrt(1.5_rkind)*xs_SH*(1+(2.56_rkind-3.2_rkind*xs_SH)/(xs_SH**2*(9.65_rkind-15.2_rkind*xs_SH+b_SH**4)))
-  B1 = B0*eps**2*(N-1._rkind)/(D0*(4._rkind+eps**2*N)+D1*(12._rkind+2._rkind*eps**2*N))
-  
-  D0term = D0*(RR**2/xs_SH**2 - 4._rkind*ZZ**2/xs_SH**2)
-  D1term = D1*(RR**4/xs_SH**4 - 12._rkind*RR**2*ZZ**2/xs_SH**4 + 8._rkind*ZZ**4/xs_SH**5)
-  psi_SH = 0.5_rkind*B0*RR**2*(1._rkind-RR**2/xs_SH**2 - ZZ**2/b_SH**2) + 0.5_rkind*B1*RR**2*(1._rkind+D0term+D1term)
-
-  PP_SH = 4._rkind*B0/xs_SH**2
-
-end subroutine Steinhauer
-
 subroutine deallocate_arrays
+  ! free memory
   use globals
   implicit none
 
@@ -519,6 +538,7 @@ subroutine deallocate_arrays
 end subroutine deallocate_arrays
 
 subroutine save
+  ! save results
   use globals
   implicit none
   integer :: mp
@@ -532,8 +552,6 @@ subroutine save
   call matwrtI1(mp,'nz',nz)
   call matwrtM1(mp,'length',length)
   call matwrtM1(mp,'psiedge',psiedge)
-  call matwrtM1(mp,'xs',xs)
-  call matwrtM1(mp,'b',b)
 
   call matwrtM(mp,'R',nrtot,1,R)
   call matwrtM(mp,'Z',nztot,1,Z)
