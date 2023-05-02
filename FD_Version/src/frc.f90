@@ -48,13 +48,13 @@ subroutine ADI_Solve(psig,psi2)
   use globals
   implicit none
 
-  real(rkind), dimension(nrtot,nztot), intent(inout) :: psig
-  real(rkind), dimension(nrtot,nztot), intent(out) :: psi2
+  real(rkind), dimension(nztot,nrtot), intent(inout) :: psig
+  real(rkind), dimension(nztot,nrtot), intent(out) :: psi2
   ! real(rkind), intent(in) :: PP
 
-  real(rkind), dimension(nrtot,nztot) :: psi1
-  real(rkind), dimension(nrtot,nztot) :: psi2_star
-  real(rkind), dimension(nrtot,nztot) :: aux
+  real(rkind), dimension(nztot,nrtot) :: psi1
+  real(rkind), dimension(nztot,nrtot) :: psi2_star
+  real(rkind), dimension(nztot,nrtot) :: aux
   real(rkind) :: omega,omegamax
   real(rkind) :: start,finish
   integer :: k
@@ -174,7 +174,7 @@ subroutine TotalCurrent(psi,PP,I)
   use prec_const
   use globals, only: nrtot,nztot,R,deltar,deltaz
   implicit none
-  real(rkind), dimension(nrtot,nztot), intent(in) :: psi
+  real(rkind), dimension(nztot,nrtot), intent(in) :: psi
   real(rkind), intent(in) :: PP
   real(rkind), intent(out) :: I
   real(rkind) :: psiv
@@ -186,9 +186,9 @@ subroutine TotalCurrent(psi,PP,I)
   !$OMP PARALLEL PRIVATE(ir,iz,psiv) &
   !$OMP          SHARED(PP,R)
   !$OMP DO REDUCTION(+:I)
-  do ir=1,nrtot
-     do iz=1,nztot
-        psiv = psi(ir,iz)
+  do iz=1,nztot
+     do ir=1,nrtot
+        psiv = psi(iz,ir)
         if (psiv.gt.0._rkind) then
            I = I - PP*ppfun(psiv)*R(ir)*deltar*deltaz
         end if
@@ -204,13 +204,13 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
   implicit none
   real(rkind),intent(in) :: omega
   real(rkind),intent(in) :: PP
-  real(rkind), dimension(nrtot,nztot), intent(in) :: psiold
-  real(rkind), dimension(nrtot,nztot), intent(out) :: psinew
+  real(rkind), dimension(nztot,nrtot), intent(in) :: psiold
+  real(rkind), dimension(nztot,nrtot), intent(out) :: psinew
 
   real(rkind), dimension(nr) :: DZpsiold
-  real(rkind), dimension(nrtot,nztot) :: psistar
+  real(rkind), dimension(nztot,nrtot) :: psistar
   real(rkind), dimension(nz) :: DRpsistar
-  real(rkind), dimension(nrtot,nztot) :: cur
+  real(rkind), dimension(nztot,nrtot) :: cur
 
   real(rkind), dimension(nr-1) :: ar
   real(rkind), dimension(nr  ) :: br
@@ -242,11 +242,11 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
   ! Current term, rhs of GS equation, R jphi = R**2 pprime
   cur = 0._rkind
 
-  do ir=1,nrtot
-     do iz=1,nztot
-        psiv = psiold(ir,iz)
+  do iz=1,nztot
+     do ir=1,nrtot
+        psiv = psiold(iz,ir)
         if (psiv.gt.0) then
-           cur(ir,iz) = -RR(ir,iz)**2*PP*ppfun(psiv)
+           cur(iz,ir) = -RR(iz,ir)**2*PP*ppfun(psiv)
         end if
      end do
   end do
@@ -269,20 +269,20 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
   !$OMP          PRIVATE(iz,DZpsiold,dr,xr)
   !$OMP DO
   do iz=2,nz+1
-     DZpsiold = (psiold(2:nr+1,iz+1) + psiold(2:nr+1,iz-1) - 2._rkind*psiold(2:nr+1,iz))*dz2
-     dr(:) = psiold(2:nr+1,iz) + omega*DZpsiold - omega*cur(2:nr+1,iz)
+     DZpsiold = (psiold(iz+1,2:nr+1) + psiold(iz-1,2:nr+1) - 2._rkind*psiold(iz,2:nr+1))*dz2
+     dr(:) = psiold(iz,2:nr+1) + omega*DZpsiold - omega*cur(iz,2:nr+1)
      dr(nr) = dr(nr) + omega*psiedge*dr1*(dr1 - 0.5/R(nr+1))
      call TDMA_Solver(ar,br,cr,dr,xr,nr)
-     psistar(2:nr+1,iz) = xr(:)
+     psistar(iz,2:nr+1) = xr(:)
   end do
   !$OMP END DO
   !$OMP END PARALLEL
 
   ! Applying boundary conditions
-  psistar(1,:) = 0._rkind
-  psistar(nr+2,:) = psiedge
-  psistar(:,1) = psiedge*R**2
-  psistar(:,nz+2) = psiedge*R**2
+  psistar(:,1) = 0._rkind
+  psistar(:,nr+2) = psiedge
+  psistar(1,:) = psiedge*R**2
+  psistar(nz+2,:) = psiedge*R**2
 
   ! !!!!!!!!!!!!!
   ! Psinew
@@ -291,11 +291,11 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
   ! Current term
   cur = 0._rkind
 
-  do ir=1,nrtot
-     do iz=1,nztot
-        psiv = psistar(ir,iz)
+  do iz=1,nztot
+     do ir=1,nrtot
+        psiv = psistar(iz,ir)
         if (psiv.gt.0) then
-           cur(ir,iz) = -RR(ir,iz)**2*PP*ppfun(psiv)
+           cur(iz,ir) = -RR(iz,ir)**2*PP*ppfun(psiv)
         end if
      end do
   end do
@@ -313,22 +313,22 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
   !$OMP          PRIVATE(ir,DRpsistar,dz,xz)
   !$OMP DO
   do ir=2,nr+1
-     DRpsistar = (psistar(ir+1,2:nz+1) + psistar(ir-1,2:nz+1) - 2._rkind*psistar(ir,2:nz+1))*dr2 - &
-          &      0.5_rkind*(psistar(ir+1,2:nz+1) - psistar(ir-1,2:nz+1))*dr1/R(ir)
-     dz(:) = psistar(ir,2:nz+1) + omega*DRpsistar - omega*cur(ir,2:nz+1)
+     DRpsistar = (psistar(2:nz+1,ir+1) + psistar(2:nz+1,ir-1) - 2._rkind*psistar(2:nz+1,ir))*dr2 - &
+          &      0.5_rkind*(psistar(2:nz+1,ir+1) - psistar(2:nz+1,ir-1))*dr1/R(ir)
+     dz(:) = psistar(2:nz+1,ir) + omega*DRpsistar - omega*cur(2:nz+1,ir)
      dz(1) = dz(1) + omega*psiedge*dz2*R(ir)**2
      dz(nz) = dz(nz) + omega*psiedge*dz2*R(ir)**2
      call TDMA_Solver(az,bz,cz,dz,xz,nz)
-     psinew(ir,2:nz+1) = xz(:)
+     psinew(2:nz+1,ir) = xz(:)
   end do
   !$OMP END DO
   !$OMP END PARALLEL
 
   ! boundary conditions
-  psinew(1,:) = 0._rkind
-  psinew(nr+2,:) = psiedge
-  psinew(:,1) = psiedge*R**2
-  psinew(:,nz+2) = psiedge*R**2
+  psinew(:,1) = 0._rkind
+  psinew(:,nr+2) = psiedge
+  psinew(1,:) = psiedge*R**2
+  psinew(nz+2,:) = psiedge*R**2
 
 end subroutine ADI_Step_omp
 
@@ -422,21 +422,21 @@ subroutine initialization
   implicit none
   integer :: i
 
-  allocate(R(nrtot),Z(nztot),RR(nrtot,nztot),ZZ(nrtot,nztot), &
-       &   psi(nrtot,nztot),psiguess(nrtot,nztot))
+  allocate(R(nrtot),Z(nztot),RR(nztot,nrtot),ZZ(nztot,nrtot), &
+       &   psi(nztot,nrtot),psiguess(nztot,nrtot))
 
   ! define R arrays and increment
   deltar = 1._rkind/real(nrtot-1,rkind)
   do i=1,nrtot
      R(i) = real(i-1,rkind)/real(nrtot-1,rkind)
-     RR(i,:) = real(i-1,rkind)/real(nrtot-1,rkind)
+     RR(:,i) = real(i-1,rkind)/real(nrtot-1,rkind)
   end do
 
   ! define Z arrays and increment
   deltaz = 1._rkind/real(nztot-1,rkind)*length
   do i=1,nztot
      Z(i) = real(i-1,rkind)/real(nztot-1,rkind)*length - length/2._rkind
-     ZZ(:,i) = real(i-1,rkind)/real(nztot-1,rkind)*length - length/2._rkind
+     ZZ(i,:) = real(i-1,rkind)/real(nztot-1,rkind)*length - length/2._rkind
   end do
 
   call read_guess
@@ -449,7 +449,6 @@ subroutine read_guess
   use globals
   implicit none
   real(rkind), dimension(3) :: sizes_dpr
-  real(rkind), allocatable, dimension(:,:) :: psig
   
   integer :: mp
 
@@ -464,10 +463,10 @@ subroutine read_guess
   nrguesstot = int(sizes_dpr(2))
   lguess = sizes_dpr(3)
 
-  print*, nrguesstot,nzguesstot
+  print*, nzguesstot,nrguesstot
 
-  drguess = 1._rkind/real(nrguesstot-1,rkind)
   dzguess = 1._rkind/real(nzguesstot-1,rkind)*length
+  drguess = 1._rkind/real(nrguesstot-1,rkind)
 
   if (lguess.ne.length) then
      print*, "length is not equal to that of the guess. Are you sure you know what you're doing?"
@@ -475,25 +474,21 @@ subroutine read_guess
      ! stop
   end if
 
-  allocate(psig(nzguesstot,nrguesstot))
+  allocate(psiguess_read(nzguesstot,nrguesstot))
 
   open(mp, file='guess.bin', status='old', access='stream', form='unformatted')
-  read(mp) psig
+  read(mp) psiguess_read
   close(mp)
 
-  if (nr.eq.nrguess .and. nz.eq.nzguess) then
+  if (nrtot.eq.nrguesstot .and. nztot.eq.nzguesstot) then
      ! if sizes are the same just reding is enough
-     psiguess = transpose(psig)
+     psiguess(:,:) = psiguess_read(:,:)
   else
      ! else interpolation is required
-     allocate(psiguess_read(nrguesstot,nzguesstot))
-     psiguess_read = transpose(psig)
      call interpolate_guess
-     deallocate(psiguess_read)
   end if
 
-  
-  deallocate(psig)
+  deallocate(psiguess_read)
 
 end subroutine read_guess
 
@@ -505,26 +500,26 @@ subroutine interpolate_guess
   real(rkind) :: x,y,t,u
 
   ! simple bilinear interpolation
-  do ir=2,nr+1
-     x = R(ir)/drguess
-     irguess = floor(x)+1
-     t = x - real(irguess-1,rkind)
-     do iz=2,nz+1
-        y = (Z(iz)+length/2._rkind)/dzguess
-        izguess = floor(y)+1
-        u = y - real(izguess-1,rkind)
+  do iz=2,nz+1
+     x = (Z(iz)+length/2._rkind)/dzguess
+     izguess = floor(x)+1
+     t = x - real(izguess-1,rkind)
+     do ir=2,nr+1
+        y = R(ir)/drguess
+        irguess = floor(y)+1
+        u = y - real(irguess-1,rkind)
 
-        psiguess(ir,iz) = (1._rkind-t)*(1._rkind-u)*psiguess_read(irguess  ,izguess  ) + &
-             &            (1._rkind-t)*      u     *psiguess_read(irguess  ,izguess+1) + &
-             &                  t     *(1._rkind-u)*psiguess_read(irguess+1,izguess  ) + &
-             &                  t     *      u     *psiguess_read(irguess+1,izguess+1)
+        psiguess(iz,ir) = (1._rkind-t)*(1._rkind-u)*psiguess_read(izguess  ,irguess  ) + &
+             &                  t     *(1._rkind-u)*psiguess_read(izguess+1,irguess  ) + &
+             &            (1._rkind-t)*      u     *psiguess_read(izguess  ,irguess+1) + &
+             &                  t     *      u     *psiguess_read(izguess+1,irguess+1)
      end do
   end do
 
-  psiguess(1,:) = 0._rkind
-  psiguess(nr+2,:) = psiedge
-  psiguess(:,1) = psiedge*R**2
-  psiguess(:,nz+2) = psiedge*R**2
+  psiguess(:,1) = 0._rkind
+  psiguess(:,nr+2) = psiedge
+  psiguess(1,:) = psiedge*R**2
+  psiguess(nz+2,:) = psiedge*R**2
 
 end subroutine interpolate_guess
 
@@ -548,17 +543,17 @@ subroutine save
   call openbin(mp,'FRC.bin','unformatted','write','big_endian')
   open(mp+1, file = 'FRC.dat', FORM = 'formatted', action = 'write')
 
-  call matwrtI1(mp,'nr',nr)
   call matwrtI1(mp,'nz',nz)
+  call matwrtI1(mp,'nr',nr)
   call matwrtM1(mp,'length',length)
   call matwrtM1(mp,'psiedge',psiedge)
 
-  call matwrtM(mp,'R',nrtot,1,R)
   call matwrtM(mp,'Z',nztot,1,Z)
-  call matwrtM(mp,'RR',nrtot,nztot,RR)
-  call matwrtM(mp,'ZZ',nrtot,nztot,ZZ)
-  call matwrtM(mp,'psiguess',nrtot,nztot,psiguess)
-  call matwrtM(mp,'psi',nrtot,nztot,psi)
+  call matwrtM(mp,'R',nrtot,1,R)
+  call matwrtM(mp,'ZZ',nztot,nrtot,ZZ)
+  call matwrtM(mp,'RR',nztot,nrtot,RR)
+  call matwrtM(mp,'psiguess',nztot,nrtot,psiguess)
+  call matwrtM(mp,'psi',nztot,nrtot,psi)
 
   close(mp)
   close(mp+1)

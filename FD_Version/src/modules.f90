@@ -19,8 +19,8 @@ module globals
 
   real(rkind) :: deltar,deltaz
   real(rkind) :: drguess,dzguess
-  real(rkind), allocatable, dimension(:) :: R,Z
-  real(rkind), allocatable, dimension(:,:) :: RR,ZZ
+  real(rkind), allocatable, dimension(:) :: Z,R
+  real(rkind), allocatable, dimension(:,:) :: ZZ,RR
   real(rkind), allocatable, dimension(:,:) :: psi
   real(rkind), allocatable, dimension(:,:) :: psiguess
   real(rkind), allocatable, dimension(:,:) :: psiguess_read
