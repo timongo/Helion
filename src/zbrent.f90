@@ -1,4 +1,5 @@
-function zbrent(func,x1,x2,tol) 
+function zbrent(func,x1,x2,tol)
+  ! From numerical recipes
   use prec_const
   implicit none
   real(rkind) :: zbrent,tol,x1,x2,func
