@@ -1,0 +1,16 @@
+ &frc
+ nz = 53,
+ nr = 32,
+ length = 4.,
+ deltati = 1.e-2,
+ !psimax = 0.04963,
+ psiedge = -0.5, ! must be negative
+ psimax = 0.05,
+ ntsmax = 1,
+ tol = 2.e-3,
+ gaussorder = 4,
+ relax = .01,
+ Itotal = 2.747,
+ npsi = 400,
+ ntheta = 512,
+/
