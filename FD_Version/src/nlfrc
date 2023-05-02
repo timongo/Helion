@@ -1,11 +1,12 @@
  &frc
- nr = 100,
- nz = 150,
+ nr = 400,
+ nz = 550,
  length = 10.,
  omegai = 1.e-6,
  pprime = 26.,
  ntsmax = 10000,
  tol = 1.e-8,
- psimax = 0.06370773166418076,
+ !psimax = 0.06370773166418076,
+ psimax = 0.06,
  guesstype=1,
 /

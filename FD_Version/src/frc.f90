@@ -76,25 +76,21 @@ subroutine ADI_Solve(psig,psi2)
   omega = omegai
 
   norm = dnrm2(ntot,psig,1)
-  ! print*, norm
 
   if (guesstype.eq.1) then
      lambda = lambdaini
   else
      lambda = pprime
   end if
-  print*, lambdaini
-
-  !lambda = 1._rkind
-  call TotalCurrent(psig,lambda,I0)
+  print*, 'lambdaini =', lambdaini
 
   k = 0
   dtpsi = tol
   
-  print*, 'current = ', I0
-  ! print*, 'psitarget = ', psimax
+  print*, 'psitarget = ', psimax
 
-  do while (k.lt.ntsmax .and. dtpsi.ge.tol)
+  ! Do at least 2 iterations
+  do while ((k.lt.ntsmax .and. dtpsi.ge.tol) .or. (k.lt.2))
      ! Carrying out two half steps
      call ADI_Step_omp(omega,lambda,psig,psi1)
      call ADI_Step_omp(omega,lambda,psi1,psi2)
@@ -124,44 +120,34 @@ subroutine ADI_Solve(psig,psi2)
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = min(omega*4._rkind,omegamax)
-        call TotalCurrent(psi2,1._rkind,I)
-        lambda = I0/I
-        ! psimaxcur = maxval(psi2)
-        ! lambda = lambda/(psimaxcur/psimax)
+        psimaxcur = maxval(psi2)
+        lambda = lambda/(psimaxcur/psimax)
      elseif (ratio.gt.0.05_rkind .and. ratio.le.0.1_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = min(omega*2._rkind,omegamax)
-        call TotalCurrent(psi2,1._rkind,I)
-        lambda = I0/I        
-        ! psimaxcur = maxval(psi2)
-        ! lambda = lambda/(psimaxcur/psimax)
+        psimaxcur = maxval(psi2)
+        lambda = lambda/(psimaxcur/psimax)
      elseif (ratio.gt.0.1_rkind .and. ratio.le.0.3_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
-        call TotalCurrent(psi2,1._rkind,I)
-        lambda = I0/I        
-        ! psimaxcur = maxval(psi2)
-        ! lambda = lambda/(psimaxcur/psimax)
+        psimaxcur = maxval(psi2)
+        lambda = lambda/(psimaxcur/psimax)
      elseif (ratio.gt.0.3_rkind .and. ratio.le.0.4_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = omega/2._rkind
-        call TotalCurrent(psi2,1._rkind,I)
-        lambda = I0/I        
-        ! psimaxcur = maxval(psi2)
-        ! lambda = lambda/(psimaxcur/psimax)
+        psimaxcur = maxval(psi2)
+        lambda = lambda/(psimaxcur/psimax)
      elseif (ratio.gt.0.4_rkind .and. ratio.le.0.6_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = omega/4._rkind
-        call TotalCurrent(psi2,1._rkind,I)
-        lambda = I0/I        
-        ! psimaxcur = maxval(psi2)
-        ! lambda = lambda/(psimaxcur/psimax)
+        psimaxcur = maxval(psi2)
+        lambda = lambda/(psimaxcur/psimax)
      elseif (ratio.gt.0.6_rkind) then
         ! updating time step without changing the starting field
         omega = omega/16._rkind
@@ -171,8 +157,6 @@ subroutine ADI_Solve(psig,psi2)
   lambdasol = lambda
 
   print*, 'lambda = ', lambdasol
-  call TotalCurrent(psi2,lambda,I)
-  print*, 'current = ', I
 
 end subroutine ADI_Solve
 
