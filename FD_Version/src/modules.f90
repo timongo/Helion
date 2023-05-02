@@ -17,6 +17,10 @@ module globals
   real(rkind) :: tol
   real(rkind) :: psimax
 
+  real(rkind) :: lambdaini,lambdasol
+
+  integer :: guesstype
+
   real(rkind) :: deltar,deltaz
   real(rkind) :: drguess,dzguess
   real(rkind), allocatable, dimension(:) :: Z,R

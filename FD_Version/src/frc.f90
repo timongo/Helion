@@ -41,7 +41,7 @@ subroutine ADI_Solve(psig,psi2)
   ! psig is guess
   ! psi2 is converged solution
   ! omega is the time step
-  ! C is a Lagrange multiplier
+  ! lambda is a Lagrange multiplier
   ! I,I0 are total currents
   ! N, Nstar, norm are norms
   use prec_const
@@ -60,7 +60,7 @@ subroutine ADI_Solve(psig,psi2)
   integer :: k
   real(rkind) :: I
   real(rkind) :: I0
-  real(rkind) :: C
+  real(rkind) :: lambda
   real(rkind) :: dtpsi
 
   real(rkind) :: N
@@ -78,9 +78,15 @@ subroutine ADI_Solve(psig,psi2)
   norm = dnrm2(ntot,psig,1)
   ! print*, norm
 
-  C = pprime
-  !C = 1._rkind
-  call TotalCurrent(psig,C,I0)
+  if (guesstype.eq.1) then
+     lambda = lambdaini
+  else
+     lambda = pprime
+  end if
+  print*, lambdaini
+
+  !lambda = 1._rkind
+  call TotalCurrent(psig,lambda,I0)
 
   k = 0
   dtpsi = tol
@@ -90,10 +96,10 @@ subroutine ADI_Solve(psig,psi2)
 
   do while (k.lt.ntsmax .and. dtpsi.ge.tol)
      ! Carrying out two half steps
-     call ADI_Step_omp(omega,C,psig,psi1)
-     call ADI_Step_omp(omega,C,psi1,psi2)
+     call ADI_Step_omp(omega,lambda,psig,psi1)
+     call ADI_Step_omp(omega,lambda,psi1,psi2)
      ! Carrying out one full step
-     call ADI_Step_omp(omega*2._rkind,C,psig,psi2_star)
+     call ADI_Step_omp(omega*2._rkind,lambda,psig,psi2_star)
      
      ! Computing |psig - psi1| in N
      call dcopy(ntot,psig,1,aux,1)
@@ -111,7 +117,7 @@ subroutine ADI_Solve(psig,psi2)
      ! tracking convergence in terms of |dpsi/dt|
      dtpsi = N/(norm*omega)
 
-     write(*,'(I6,4E12.4)') k+1,omega,C,ratio,dtpsi/tol
+     write(*,'(I6,4E12.4)') k+1,omega,lambda,ratio,dtpsi/tol
 
      if (ratio.le.0.05_rkind) then
         k=k+1
@@ -119,51 +125,53 @@ subroutine ADI_Solve(psig,psi2)
         ! updating time step
         omega = min(omega*4._rkind,omegamax)
         call TotalCurrent(psi2,1._rkind,I)
-        C = I0/I
+        lambda = I0/I
         ! psimaxcur = maxval(psi2)
-        ! C = C/(psimaxcur/psimax)
+        ! lambda = lambda/(psimaxcur/psimax)
      elseif (ratio.gt.0.05_rkind .and. ratio.le.0.1_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = min(omega*2._rkind,omegamax)
         call TotalCurrent(psi2,1._rkind,I)
-        C = I0/I        
+        lambda = I0/I        
         ! psimaxcur = maxval(psi2)
-        ! C = C/(psimaxcur/psimax)
+        ! lambda = lambda/(psimaxcur/psimax)
      elseif (ratio.gt.0.1_rkind .and. ratio.le.0.3_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         call TotalCurrent(psi2,1._rkind,I)
-        C = I0/I        
+        lambda = I0/I        
         ! psimaxcur = maxval(psi2)
-        ! C = C/(psimaxcur/psimax)
+        ! lambda = lambda/(psimaxcur/psimax)
      elseif (ratio.gt.0.3_rkind .and. ratio.le.0.4_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = omega/2._rkind
         call TotalCurrent(psi2,1._rkind,I)
-        C = I0/I        
+        lambda = I0/I        
         ! psimaxcur = maxval(psi2)
-        ! C = C/(psimaxcur/psimax)
+        ! lambda = lambda/(psimaxcur/psimax)
      elseif (ratio.gt.0.4_rkind .and. ratio.le.0.6_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = omega/4._rkind
         call TotalCurrent(psi2,1._rkind,I)
-        C = I0/I        
+        lambda = I0/I        
         ! psimaxcur = maxval(psi2)
-        ! C = C/(psimaxcur/psimax)
+        ! lambda = lambda/(psimaxcur/psimax)
      elseif (ratio.gt.0.6_rkind) then
         ! updating time step without changing the starting field
         omega = omega/16._rkind
      end if
   end do
 
-  print*, 'C = ', C
-  call TotalCurrent(psi2,C,I)
+  lambdasol = lambda
+
+  print*, 'lambda = ', lambdasol
+  call TotalCurrent(psi2,lambda,I)
   print*, 'current = ', I
 
 end subroutine ADI_Solve
@@ -380,8 +388,8 @@ subroutine readnamelist
   
   integer :: mp
 
-  nr = 100
   nz = 100
+  nr = 100
   ! aspect ratio length/radius
   length = 1._rkind
   ! Psi boundary condition (default corresponds to unit field)
@@ -399,9 +407,12 @@ subroutine readnamelist
   ! psimax target on axis (not used yet)
   psimax = 0.05_rkind
 
+  ! written with python or with fortran
+  guesstype = 1
+
   ! define namelist
   namelist /frc/ &
-       nr,nz,length,psiedge,pprime,ntsmax,tol,omegai,psimax
+       nr,nz,length,psiedge,pprime,ntsmax,tol,omegai,psimax,guesstype
 
   ! read namelist
   mp = 101
@@ -445,7 +456,9 @@ end subroutine initialization
 
 subroutine read_guess
   ! read guess array
-  ! assumes the guess was generated with np.array([...]).tofile('guess.bin') command in python
+  ! if guesstype = 1, it is assumed that it was generated in the routine save of the present program
+  ! if guesstype = 2, it is assumed that 
+  ! the guess was generated with np.array([...]).tofile('guess.bin') command in python
   use globals
   implicit none
   real(rkind), dimension(3) :: sizes_dpr
@@ -454,31 +467,54 @@ subroutine read_guess
 
   integer :: i
 
-  mp = 101
-  
-  open(mp, file='guess.dat', status='old', access='stream', form='unformatted')
-  read(mp) sizes_dpr
-  close(mp)
-  nzguesstot = int(sizes_dpr(1))
-  nrguesstot = int(sizes_dpr(2))
-  lguess = sizes_dpr(3)
+  if (guesstype.eq.1) then
+     
+     call openbin(mp,'solution_guess_read.bin','unformatted','read','big_endian')
+     read(mp) nzguesstot
+     read(mp) nrguesstot
+     read(mp) lguess
+     read(mp) lambdaini
 
-  print*, nzguesstot,nrguesstot
+     allocate(psiguess_read(nzguesstot,nrguesstot))
 
-  dzguess = 1._rkind/real(nzguesstot-1,rkind)*length
-  drguess = 1._rkind/real(nrguesstot-1,rkind)
+     read(mp) psiguess_read
 
-  if (lguess.ne.length) then
-     print*, "length is not equal to that of the guess. Are you sure you know what you're doing?"
-     write(*,'(A,E12.4,A,E12.4)') 'Length = ', length, 'while guess length is', lguess
-     ! stop
+     close(mp)
+
+     dzguess = 1._rkind/real(nzguesstot-1,rkind)*lguess
+     drguess = 1._rkind/real(nrguesstot-1,rkind)
+
+     if (lguess.ne.length) then
+        print*, "length is not equal to that of the guess. Are you sure you know what you're doing?"
+        write(*,'(A,E12.4,A,E12.4)') 'Length = ', length, 'while guess length is', lguess
+     end if
+
+  elseif (guesstype.eq.2) then
+     mp = 101
+
+     open(mp, file='guess.dat', status='old', access='stream', form='unformatted')
+     read(mp) sizes_dpr
+     close(mp)
+     nzguesstot = int(sizes_dpr(1))
+     nrguesstot = int(sizes_dpr(2))
+     lguess = sizes_dpr(3)
+
+     print*, nzguesstot,nrguesstot
+
+     dzguess = 1._rkind/real(nzguesstot-1,rkind)*lguess
+     drguess = 1._rkind/real(nrguesstot-1,rkind)
+
+     if (lguess.ne.length) then
+        print*, "length is not equal to that of the guess. Are you sure you know what you're doing?"
+        write(*,'(A,E12.4,A,E12.4)') 'Length = ', length, 'while guess length is', lguess
+     end if
+
+     allocate(psiguess_read(nzguesstot,nrguesstot))
+
+     open(mp, file='guess.bin', status='old', access='stream', form='unformatted')
+     read(mp) psiguess_read
+     close(mp)
   end if
-
-  allocate(psiguess_read(nzguesstot,nrguesstot))
-
-  open(mp, file='guess.bin', status='old', access='stream', form='unformatted')
-  read(mp) psiguess_read
-  close(mp)
 
   if (nrtot.eq.nrguesstot .and. nztot.eq.nzguesstot) then
      ! if sizes are the same just reding is enough
@@ -487,7 +523,7 @@ subroutine read_guess
      ! else interpolation is required
      call interpolate_guess
   end if
-
+  
   deallocate(psiguess_read)
 
 end subroutine read_guess
@@ -557,6 +593,15 @@ subroutine save
 
   close(mp)
   close(mp+1)
+
+  ! write guess
+  call openbin(mp,'solution_guess_write.bin','unformatted','write','big_endian')
+  write(mp) nztot
+  write(mp) nrtot
+  write(mp) length
+  write(mp) lambdasol
+  write(mp) psi
+  close(mp)
 
 end subroutine save
 
