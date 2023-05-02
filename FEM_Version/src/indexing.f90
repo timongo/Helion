@@ -1,4 +1,5 @@
 subroutine Ind_to_iRiZ
+  ! Gives the answer to the question 'What is iR,iZ and field type if I know ind (from 1 to nws)?'
   ! 1 -> psi
   ! 2-> dZpsi
   ! 3 -> dRpsi
@@ -148,6 +149,7 @@ subroutine Ind_to_iRiZ
 end subroutine Ind_to_iRiZ
 
 subroutine iRiZ_to_Ind
+  ! Gives the answer to the question 'What is ind (from 1 to nws) if I know iR,iZ and field type?'
   use globals
   implicit none
   integer :: i,j,iZ,iR,k

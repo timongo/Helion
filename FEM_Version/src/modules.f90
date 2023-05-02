@@ -14,7 +14,6 @@ module globals
   integer :: gaussorder
   integer :: nboundarypoints
 
-  real(rkind) :: deltati
   integer :: ntsmax
   integer :: ilast
   real(rkind) :: tol

@@ -33,7 +33,10 @@ subroutine PetscSolve(psistart,Lambdastart,psisol,Lambdasol)
   one = 1.d0
   ione = 1
   zero = 0.d0
-  
+
+  ! Required because PETSc is really picky with types sometimes
+  ! Argument of VecSetValues and VecGetValues should be arrays even if only one
+  ! value is inserted
   Lind(0) = pnws
   Larray(0) = Lambdastart
   
@@ -42,19 +45,23 @@ subroutine PetscSolve(psistart,Lambdastart,psisol,Lambdasol)
      pvals(II) = psistart(II+1)
   end do
 
-
+  ! Create PETSc vectors
   call VecCreateSeq(PETSC_COMM_WORLD,size,x,ierr)
   call VecDuplicate(x,rvec,ierr)
 
+  ! Put guess in x
   call VecSetValues(x,pnws,ix,pvals,INSERT_VALUES,ierr)
-  call VecSetValues(x,ione,Lind,Larray,INSERT_VALUES,ierr)  
+  call VecSetValues(x,ione,Lind,Larray,INSERT_VALUES,ierr)
+  ! Assemble vector
   call VecAssemblyBegin(x,ierr)
   call VecAssemblyEnd(x,ierr)  
 
+  ! Create Jacobian matrix context
   call MatCreate(PETSC_COMM_WORLD,JMat,ierr)
   call MatSetSizes(JMat,PETSC_DECIDE,PETSC_DECIDE,size,size,ierr)
   call MatSetType(JMat,MATSEQAIJ,ierr)
 
+  ! Create SNES context
   call SNESCreate(PETSC_COMM_WORLD,snes,ierr)
   call SNESSetFunction(snes,rvec,FormFunction,PETSC_NULL_INTEGER,ierr)
   ! call SNESSetJacobian(snes,Jmat,Jmat,FormJacobian,PETSC_NULL_INTEGER,ierr)
@@ -70,10 +77,12 @@ subroutine PetscSolve(psistart,Lambdastart,psisol,Lambdasol)
 
   ! call FormFunction(snes,x,rvec,PETSC_NULL_INTEGER,ierr)
   
+  ! Solve the nonlinear problem with PETSc
   call SNESSolve(snes,PETSC_NULL_VEC,x,ierr)
 
+  ! Put psi solution in pvals
   call VecGetValues(x,pnws,ix,pvals,ierr)
-
+  ! Get solution for the Lagrange multiplier
   call VecGetValues(x,ione,Lind,Larray,ierr)  
   lambdaval = Larray(0)
 
@@ -82,6 +91,7 @@ subroutine PetscSolve(psistart,Lambdastart,psisol,Lambdasol)
   end do
   Lambdasol = lambdaval
 
+  ! Destroy the PETSc vectors, matrix and SNES context
   call VecDestroy(x,ierr)
   call VecDestroy(rvec,ierr)
   call MatDestroy(Jmat,ierr)

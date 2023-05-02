@@ -1,5 +1,5 @@
 subroutine HeavisideQuad(fzr,gzr,n,res)
-  ! fzr is the function to integrate on (0,1)x(0,1)
+  ! fzr is the function to integrate on [0,1]x[0,1]
   ! over the domain where gzr is positive
   use prec_const
   implicit none
@@ -10,13 +10,16 @@ subroutine HeavisideQuad(fzr,gzr,n,res)
   real(rkind) :: g00,g01,g10,g11
   integer :: case
 
+  ! Compute values of gzr at four corners
   g00 = gzr(0._rkind,0._rkind)
   g01 = gzr(0._rkind,1._rkind)
   g10 = gzr(1._rkind,0._rkind)
   g11 = gzr(1._rkind,1._rkind)
 
+  ! Use these values to determine which case is relevant
   call WhichCase(g00,g01,g10,g11,case)
-
+  
+  ! Compute the integral using quadpack
   call Case_1to12(fzr,gzr,case,n,res)
 
 end subroutine HeavisideQuad
@@ -302,6 +305,7 @@ contains
   end function gzr0
   
   function frz(r,z)
+    ! simply inverts the arguments (for cases 7 and 8)
     real(rkind) :: r,z,frz
     frz = fzr(z,r)
   end function frz
@@ -310,8 +314,10 @@ contains
     real(rkind) :: z,res
 
     if (n.eq.2) then
+       ! if only 2 points, linear interpolation is used
        res = rs(1) + (z-z0)/(z1-z0)*(rs(2)-rs(1))
     else
+       ! otherwise, a quadratic interpolation is performed
        call interpolation(zs,rs,n,z,res)
     end if
   end function rsinterp
@@ -320,8 +326,10 @@ contains
     real(rkind) :: r,res
 
     if (n.eq.2) then
+       ! if only 2 points, linear interpolation is used
        res = zs(1) + (r-r0)/(r1-r0)*(zs(2)-zs(1))
     else
+       ! otherwise, a quadratic interpolation is performed
        call interpolation(rs,zs,n,r,res)
     end if
   end function zsinterp

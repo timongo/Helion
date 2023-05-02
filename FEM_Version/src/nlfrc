@@ -2,7 +2,6 @@
  nz = 53,
  nr = 32,
  length = 4.,
- deltati = 1.e-2,
  !psimax = 0.04963,
  psiedge = -0.5, ! must be negative
  psimax = 0.05,

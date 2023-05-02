@@ -15,7 +15,7 @@ subroutine Run
   implicit none
   real(rkind), external :: ppfun
   
-  call EvolveBrutal(PsiCur,ppfun,AllPsis,ntsmax)
+  call Evolve(PsiCur,ppfun,AllPsis,ntsmax)
 
   ! call PetscSolve(PsiCur,1._rkind,PsiFinal,LambdaFinal)
 
@@ -28,30 +28,38 @@ subroutine ReadNamelist
   
   integer :: mp
 
+  ! sizes
   nz = 100
   nr = 100
   length = 1._rkind
+  ! psi at the boundary in R=1
   psiedge = -0.5_rkind
   
+  ! max number of iterations
   ntsmax = 500
   tol = 1.e-8_rkind
-  deltati = 1.e-2_rkind
 
+  ! order for gaussian quadratures
   gaussorder = 4
+  ! Number of detected points for the plasma vacuum boundary in each square patch 
   nboundarypoints = 5
   
+  ! How much percentage is updated in new solution
   relax = 0.1_rkind
 
+  ! Total current (when total current is used)
   Itotal = 2._rkind
 
+  ! Target value of psi on magnetic axis
   psimax = 0.05
-
+  
+  ! Number of points for psi,theta mesh (jacobian)
   npsi = 50
   ntheta = 64
 
   namelist /frc/ &
        &    nr,nz,length,psiedge,ntsmax,psimax, &
-       &    tol,deltati,gaussorder, nboundarypoints,relax,Itotal, &
+       &    tol,gaussorder, nboundarypoints,relax,Itotal, &
        &    npsi,ntheta
 
   mp = 101
@@ -86,6 +94,7 @@ subroutine Initialize
        &   RIntegralArray(0:6,nr-1), &
        &   ContributionMat(0:1,0:1,4,0:1,0:1,4,nr-1))
 
+  ! Constructing Z,R arrays
   deltar = 1._rkind/real(nr-1,rkind)
   do i=1,nr
      R(i) = real(i-1,rkind)/real(nr-1,rkind)
@@ -97,14 +106,15 @@ subroutine Initialize
      Z(i) = real(i-1,rkind)/real(nz-1,rkind)*length - length/2._rkind
      ZZ(i,:) = real(i-1,rkind)/real(nz-1,rkind)*length - length/2._rkind
   end do
-
+  
+  ! dRdZ array is used to transform quantities like dpsi/dZ into dpsi/dZbar, where Zbar goes from 0 to 1 within a patch
   dRdZ(1) = 1._rkind
   dRdZ(2) = deltaz
   dRdZ(3) = deltar
   dRdZ(4) = deltar*deltaz
 
+  ! log(1+R/dR)/(R/dR) is involved in the radial integrations when building the matrix
   logRp1sR(1) = 0._rkind
-
   do i=2,nr
      logRp1sR(i) = log((1._rkind+R(i)/deltar)/(R(i)/deltar))
   end do
@@ -114,21 +124,28 @@ subroutine Initialize
   ! 4*(nR-2) : 2 unknowns per Z=+-L/2 edge point (psi, dRpsi are known)
   ! 2 : 1 unknown (d2psi/dRdZ) per top corner
   ! No unknowns on bottom edge (including corners)
-  nws = (nr-2)*(nz-2)*4 + 2*(nz-2)+4*(nr-2)+2
-  nkws = nr*nz*4-nws
-  ntot = nws+nkws
+  nws = (nr-2)*(nz-2)*4 + 2*(nz-2)+4*(nr-2)+2 ! number of unknowns
+  nkws = nr*nz*4-nws ! number of known values (boundary conditions)
+  ntot = nws+nkws ! total size of array needed to reconstruct psi
 
   allocate(B_BC(nws),PsiCur(nws),PsiFinal(nws),rhs(nws),AllPsis(nws,ntsmax+1))
 
+  ! This matrix transforms the set of psi and its derivatives and the four corners of a patch into the array aij such that psi = sum_(i,j) aij Z**i R**j (Z and R going from 0 to 1 on a patch) 
   call HermiteMatrix
 
+  ! Gives the answer to the question 'What is iR,iZ and field type if I know ind (from 1 to nws)?'
   call Ind_to_iRiZ
+
+  ! Gives the answer to the question 'What is ind (from 1 to nws) if I know iR,iZ and field type?'
   call iRiZ_to_Ind
 
+  ! Uses the Hermite matrix to compute all possible aij for all 16 base cases (4 locations on a patch times 4 field types)
   call AllCoeffs
-
+  
+  ! This sets the nkws values that are known due to the boundary conditions
   call PsiBoundaryCondition
 
+  ! Initialize petsc
   call PetscInitialize(PETSC_NULL_CHARACTER,ierr)
   PETSC_COMM_WORLD = MPI_COMM_WORLD
   PETSC_COMM_SELF = MPI_COMM_SELF  
@@ -139,16 +156,22 @@ subroutine Initialize
 
   ! print*, (t1-t0)/24
 
+  ! Read guess psi
   call ReadGuess
 
   ! call ReadPprime
 
+  ! Interpolate the guess to obtain a guess with size nws containing also the field derivatives 
   call InterpolatePsi(PsiGuess,nzguess,nrguess,PsiCur)
 
+  ! Computing beforehand all possible types of R**i/(R+a) integrals for matrix preparation
   call AllRIntegrals
+  ! Computing all possible values for the matrix elements
   call Aij_all  
+  ! Assembling the matrix as well as the boundary condition part of the right hand side
   call SETUPAB
 
+  ! Just a test
   call TotalCurrent(PsiCur,ppfun,Itot)
 
   ilast = 1
@@ -156,6 +179,7 @@ subroutine Initialize
 end subroutine Initialize
 
 function ppfun(psi)
+  ! pprime function
   use prec_const
   use globals
   implicit none
@@ -185,6 +209,8 @@ function ppfun(psi)
 end function ppfun
 
 subroutine PsiBoundaryCondition
+  ! This sets the nkws values that are known due to the boundary conditions
+  ! psi = R**2*psiedge
   use globals
   implicit none
 
@@ -211,6 +237,7 @@ subroutine PsiBoundaryCondition
 end subroutine PsiBoundaryCondition
 
 subroutine HermiteMatrix
+  ! This matrix transforms the set of psi and its derivatives and the four corners of a patch into the array aij such that psi = sum_(i,j) aij Z**i R**j (Z and R going from 0 to 1 on a patch) 
   ! https://en.wikipedia.org/wiki/Bicubic_interpolation
   use globals
   implicit none
@@ -281,7 +308,7 @@ end subroutine Finalize
 
 subroutine InterpolatePsi(Psizrg,nzg,nrg,Psi)
   ! Transform a 2D psi array into an array adapted to the finite element
-  ! Psizrg is typically a 2D guess z,r arry
+  ! Psizrg is typically a 2D guess z,r array
   ! Psi is in the form of a size nws array
   use globals
   implicit none
@@ -333,228 +360,27 @@ subroutine InterpolatePsi(Psizrg,nzg,nrg,Psi)
      psi11 = psizrg(izg+1,irg+1)
 
      if (k.eq.1) then
+        ! psi
         Psi(ind) = (psi00*(1._rkind-t)*(1._rkind-u) + &
              &      psi10*t*(1._rkind-u) +  &
              &      psi01*(1._rkind-t)*u + &
              &      psi11*t*u)
      else if (k.eq.2) then
+        ! dpsi/dz
         Psi(ind) = (psi10 - psi00)*(1._rkind-u)/dzg + (psi11 - psi01)*u/dzg
      else if (k.eq.3) then
+        ! dpsi/dr
         Psi(ind) = (psi01 - psi00)*(1._rkind-t)/drg + (psi11 - psi10)*t/drg
      else if (k.eq.4) then
+        ! d2psi/dzdr
         Psi(ind) = (psi11 + psi00 - psi10 - psi01)/(drg*dzg)
      end if
   end do
 
 end subroutine InterpolatePsi
 
-subroutine Evolve(PsiIni,fun,Psis,Cs,dts,nts)
-  use globals
-  implicit none
-  real(rkind), dimension(nws), intent(in) :: PsiIni
-  integer, intent(in) :: nts
-  real(rkind), dimension(nws,nts+1), intent(out) :: Psis
-  real(rkind), dimension(nts+1), intent(out) :: Cs
-  real(rkind), dimension(nts+1), intent(out) :: dts
-  real(rkind), external :: fun
-  
-  real(rkind) :: C
-  real(rkind), dimension(nws) :: Psi1,Psi2,Psi2_star
-  real(rkind) :: ratio,n_,n_star
-  real(rkind) :: Itot
-  real(rkind) :: dtpsi
-  real(rkind) :: deltat
-  real(rkind) :: Icur
-  logical :: advance
-  integer :: i,k
-
-  Psis = 0._rkind
-  Cs = 0._rkind
-  dts = 0._rkind
-
-  i = 1
-  dtpsi = tol
-  Psis(:,i) = PsiIni
-  Cs(i) = 1._rkind
-  C = 1._rkind
-  call TotalCurrent(PsiIni,fun,Itot)
-  deltat = deltati
-
-  advance = .true.
-  k = 0
-
-  do while (i.le.nts .and. dtpsi.ge.tol)
-     if (advance) then
-        write(*,'(A)') '=================='
-        write(*,'(A,I3)') 'Step ',i
-        write(*,'(A)') '=================='
-     end if
-     
-     call FEMStep(deltat*2._rkind,Psis(:,i),funC,Psi2_star,.true.)
-     call FEMStep(deltat,Psis(:,i),funC,Psi1,.false.)
-     call FEMStep(deltat,Psi1,funC,Psi2,.true.)
-
-     call DiffNorm(nws,Psis(:,i),Psi2,n_)
-     call DiffNorm(nws,Psi2,Psi2_star,n_star)
-     ratio = n_star/n_
-     dtpsi = n_/deltat
-
-     write(*,'(I3,4E11.3)') k,deltat,Cs(i),ratio,dtpsi/tol
-     
-     if (ratio.le.0.05_rkind) then
-        dts(i) = deltat
-        i = i+1
-        k=0
-        Psis(:,i) = Psi2(:)
-        Cs(i) = C
-        deltat = deltat*4._rkind
-        call TotalCurrent(Psi2,fun,Icur)
-        C = Itot/Icur
-        advance = .true.
-     else if (ratio.gt.0.05_rkind .and. ratio.le.0.1_rkind) then
-        dts(i) = deltat
-        i = i+1
-        k=0
-        Psis(:,i) = Psi2(:)
-        Cs(i) = C
-        deltat = deltat*2._rkind
-        call TotalCurrent(Psi2,fun,Icur)
-        C = Itot/Icur
-        advance = .true.
-     else if (ratio.gt.0.1_rkind .and. ratio.le.0.3_rkind) then
-        dts(i) = deltat
-        i = i+1
-        k=0
-        Psis(:,i) = Psi2(:)
-        Cs(i) = C
-        call TotalCurrent(Psi2,fun,Icur)
-        C = Itot/Icur
-        advance = .true.
-     else if (ratio.gt.0.3_rkind .and. ratio.le.0.4_rkind) then
-        dts(i) = deltat
-        i = i+1
-        k=0
-        Psis(:,i) = Psi2(:)
-        Cs(i) = C
-        deltat = deltat*0.5_rkind
-        call TotalCurrent(Psi2,fun,Icur)
-        C = Itot/Icur
-        advance = .true.
-     else if (ratio.gt.0.4_rkind .and. ratio.le.0.6_rkind) then
-        dts(i) = deltat
-        i = i+1
-        k=0
-        Psis(:,i) = Psi2(:)
-        Cs(i) = C
-        deltat = deltat*0.25_rkind
-        call TotalCurrent(Psi2,fun,Icur)
-        C = Itot/Icur
-        advance = .true.
-     else
-        k=k+1
-        deltat = deltat*0.0625_rkind
-        advance = .false.
-     end if
-  end do
-
-contains
-  
-  function funC(psi)
-    implicit none
-    real(rkind) :: psi,funC
-
-    funC = fun(psi)*C
-
-  end function funC
-
-end subroutine Evolve
-
-subroutine FEMStep(deltat,Psi,fun,PsiSol,compute_rhs)
-#include <petsc/finclude/petsc.h>
-#include <petsc/finclude/petscksp.h>
-  use globals
-  use petscksp
-  implicit none
-
-  real(rkind), intent(in) :: deltat
-  logical, intent(in) :: compute_rhs
-  real(rkind), dimension(nws), intent(in) :: Psi
-  real(rkind), dimension(nws), intent(out) :: PsiSol
-  real(rkind), external :: fun
-  integer :: ind
-  real(rkind) :: norm2,norm2_
-
-  Vec :: u,x,b
-  PetscInt :: pnws
-  PetscErrorCode :: ierr
-  Mat :: PM
-  PetscReal :: one,negdt
-  PetscReal :: ptol
-  PetscInt :: ione
-  PetscInt :: II
-  PetscInt, dimension(0:nws-1) :: ix
-  PetscReal, dimension(0:nws-1) :: pvals
-
-  PC :: pc
-  KSP :: ksp
-
-  if (compute_rhs) call RightHandSide(Psi,fun,rhs)
-
-  print*, 'Matrix solve'
-
-  pnws = nws
-  negdt = -deltat
-  do II=0,nws-1
-     ix(II) = II
-     pvals(II) = psi(II+1) + negdt*(B_BC(II+1)+rhs(II+1))
-  end do
-  ione = 1
-  one = 1.d0
-
-  call MatCreate(PETSC_COMM_WORLD,PM,ierr)
-  call MatSetSizes(PM,PETSC_DECIDE,PETSC_DECIDE,pnws,pnws,ierr)
-  call MatSetType(PM,MATSEQAIJ,ierr)
-  call MatSeqAIJSetPreallocation(PM,ione,PETSC_NULL_INTEGER,ierr)
-
-  do II=0,pnws-1
-     call MatSetValues(PM,ione,II,ione,II,one,INSERT_VALUES,ierr)
-  end do
-  call MatAssemblyBegin(PM,MAT_FINAL_ASSEMBLY,ierr)
-  call MatAssemblyEnd(PM,MAT_FINAL_ASSEMBLY,ierr)
-
-  call MatAXPY(PM,negdt,PAMat,DIFFERENT_NONZERO_PATTERN,ierr)
-
-  call KSPCreate(PETSC_COMM_WORLD,ksp,ierr)
-  call KSPSetOperators(ksp,PM,PM,ierr)
-
-  call KSPGetPC(ksp,pc,ierr)
-  ptol = 1.e-7
-  call KSPSetTolerances(ksp,ptol,PETSC_DEFAULT_REAL,PETSC_DEFAULT_REAL,PETSC_DEFAULT_INTEGER,ierr)
-
-  call KSPSetFromOptions(ksp,ierr)
-  call PCSetFromOptions(pc,ierr)
-
-  call VecCreateSeq(PETSC_COMM_WORLD,pnws,b,ierr)
-  call VecDuplicate(b,x,ierr)
-
-  ! Set b to psi - deltat*(B + rhs)
-  call VecSetValues(b,pnws,ix,pvals,INSERT_VALUES,ierr)
-  call VecAssemblyBegin(b,ierr)
-  call VecAssemblyEnd(b,ierr)
-
-  call KSPSolve(ksp,b,x,ierr)
-
-  call VecGetValues(x,pnws,ix,pvals,ierr)
-
-  PsiSol(1:nws) = pvals(0:pnws-1)
-
-  call MatDestroy(PM,ierr)
-  call VecDestroy(x,ierr)
-  call VecDestroy(b,ierr)
-  
-end subroutine FEMStep
-
-subroutine EvolveBrutal(PsiIni,fun,Psis,nts)
+subroutine Evolve(PsiIni,fun,Psis,nts)
+  ! Simple Picard algorithm to find psi
   use globals
   implicit none
   real(rkind), dimension(nws), intent(in) :: PsiIni
@@ -568,7 +394,6 @@ subroutine EvolveBrutal(PsiIni,fun,Psis,nts)
   real(rkind) :: ratio,n_,n_star
   real(rkind) :: Itot
   real(rkind) :: dtpsi
-  real(rkind) :: deltat
   real(rkind) :: Icur
   real(rkind) :: rmax,psimaxcur
   logical :: advance
@@ -586,23 +411,28 @@ subroutine EvolveBrutal(PsiIni,fun,Psis,nts)
   dtpsi = tol
   Psis(:,i) = PsiIni
   Cs(i) = 1._rkind
-  C = 1._rkind
+  ! C is a Lagrange multiplier to respect the constraint of maximum psi
   C = 29.6195935435900_rkind
   ! call TotalCurrent(PsiIni,fun,Itot)
   ! Itot = Itotal
-  deltat = deltati
 
   Psi1(:) = PsiIni(:)
 
   do while (i.le.nts .and. dtpsi.ge.tol)
      i = i+1
-     call FEMStepBrutal(Psi1,funC,Psi2)
+     ! One step is to solve A psinew = rhs(psiold) 
+     ! and update psi2 = psiold + relax*(psinew-psiold)
+     call FEMStep(Psi1,funC,Psi2)
+     ! Compute norm difference between old and new solutions
      call DiffNorm(nws,Psi1,Psi2,dtpsi)
-     call TotalCurrent(Psi2,fun,Icur)
+     ! call TotalCurrent(Psi2,fun,Icur)
+     ! Compute Psimax
      call PsiMaximum(Psi2,rmax,psimaxcur,equatorial)
      ! C = Itot/Icur
+     ! Update the Lagrange multiplier
      C = C*psimax/psimaxcur
      write(*,'(2E12.4)'), C,dtpsi
+     ! Update psi
      Psis(:,i) = Psi2(:)
      Psi1(:) = Psi2(:)
   end do
@@ -610,13 +440,14 @@ subroutine EvolveBrutal(PsiIni,fun,Psis,nts)
   ilast = i
   LambdaFinal = C
 
-  call TotalCurrent(Psi2,funC,Icur)
+  ! call TotalCurrent(Psi2,funC,Icur)
 
-  write(*,'(A,2E12.4)') 'Total current at convergence = ', Icur
+  ! write(*,'(A,2E12.4)') 'Total current at convergence = ', Icur
 
 contains
   
   function funC(psi)
+    ! return ppfun times the Lagrange multiplier C
     implicit none
     real(rkind) :: psi,funC
 
@@ -624,9 +455,9 @@ contains
 
   end function funC
   
-end subroutine EvolveBrutal
+end subroutine Evolve
 
-subroutine FEMStepBrutal(Psi,fun,PsiSol)
+subroutine FEMStep(Psi,fun,PsiSol)
 #include <petsc/finclude/petsc.h>
 #include <petsc/finclude/petscksp.h>
   use globals
@@ -653,10 +484,12 @@ subroutine FEMStepBrutal(Psi,fun,PsiSol)
   PC :: pc
   KSP :: ksp
 
+  ! Compute psi dependent part of the right hand side (integrals of R*pprime(psi) )
   call RightHandSide(Psi,fun,rhs)
 
   print*, 'Matrix solve'
 
+  ! Set right hand side
   pnws = nws
   do II=0,nws-1
      ix(II) = II
@@ -665,6 +498,7 @@ subroutine FEMStepBrutal(Psi,fun,PsiSol)
   ione = 1
   one = 1.d0
 
+  ! Create KSP context for linear solve
   call KSPCreate(PETSC_COMM_WORLD,ksp,ierr)
   call KSPSetOperators(ksp,PAMat,PAMat,ierr)
 
@@ -683,17 +517,21 @@ subroutine FEMStepBrutal(Psi,fun,PsiSol)
   call VecAssemblyBegin(b,ierr)
   call VecAssemblyEnd(b,ierr)
 
+  ! Solve the linear problem
   call KSPSolve(ksp,b,x,ierr)
 
+  ! Get the values of the solution
   call VecGetValues(x,pnws,ix,pvals,ierr)
 
+  ! Use them to update the solution with relax
   PsiSol(1:nws) = Psi(1:nws)*(1._rkind - relax) + relax*pvals(0:pnws-1)
 
+  ! Destroy PETSc vectors and ksp context
   call VecDestroy(x,ierr)
   call VecDestroy(b,ierr)
   call KSPDestroy(ksp,ierr)
   
-end subroutine FEMStepBrutal
+end subroutine FEMStep
 
 subroutine PetscDiffNorm(x,y,norm,ierr)
 #include <petsc/finclude/petsc.h>
