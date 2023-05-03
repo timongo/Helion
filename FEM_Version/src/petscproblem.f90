@@ -15,7 +15,7 @@ program main
 
 end program main
 
-subroutine PetscSolve(size)
+subroutine PetscSolver(size)
 #include <petsc/finclude/petscsnes.h>
   use petscsnes
   implicit none
@@ -85,4 +85,4 @@ subroutine PetscSolve(size)
   Csol = 0._rkind
   psisol = 0._rkind
 
-end subroutine PetscSolve
+end subroutine PetscSolver
