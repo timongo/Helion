@@ -453,7 +453,7 @@ subroutine read_guess
 
   if (guesstype.eq.1) then
      
-     call openbin(mp,'solution_guess_read.bin','unformatted','read','big_endian')
+     call openbin(mp,'solution_guess_read_FD.bin','unformatted','read','big_endian')
      read(mp) nzguesstot
      read(mp) nrguesstot
      read(mp) lguess
@@ -579,7 +579,7 @@ subroutine save
   close(mp+1)
 
   ! write guess
-  call openbin(mp,'solution_guess_write.bin','unformatted','write','big_endian')
+  call openbin(mp,'solution_guess_write_FD.bin','unformatted','write','big_endian')
   write(mp) nztot
   write(mp) nrtot
   write(mp) length
