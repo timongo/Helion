@@ -1,11 +1,10 @@
-subroutine PetscSolve(psistart,Lambdastart,psisol,Lambdasol)
+subroutine PetscSolve(psistart,psisol,Lambdasol)
 #include <petsc/finclude/petscsnes.h>
   use petscsnes
   use globals
   implicit none
   real(rkind), dimension(nws), intent(in) :: psistart
   real(rkind), dimension(nws), intent(out) :: psisol
-  real(rkind), intent(in) :: Lambdastart
   real(rkind), intent(out) :: Lambdasol
 
   SNES :: snes
@@ -22,6 +21,7 @@ subroutine PetscSolve(psistart,Lambdastart,psisol,Lambdasol)
   PetscScalar :: one,zero
   PetscInt :: ione
   PetscErrorCode :: ierr
+  PetscScalar :: normrvec
 
   PetscScalar, dimension(0:0) :: Larray
   PetscInt, dimension(0:0) :: Lind
@@ -38,7 +38,7 @@ subroutine PetscSolve(psistart,Lambdastart,psisol,Lambdasol)
   ! Argument of VecSetValues and VecGetValues should be arrays even if only one
   ! value is inserted
   Lind(0) = pnws
-  Larray(0) = Lambdastart
+  Larray(0) = LambdaIni
   
   do II=0,pnws-1
      ix(II) = II
@@ -68,7 +68,7 @@ subroutine PetscSolve(psistart,Lambdastart,psisol,Lambdasol)
   call SNESSetFromOptions(snes,ierr)
   call SNESGetLineSearch(snes, linesearch, ierr)
   call SNESLineSearchSetType(linesearch,'basic', ierr)
-  call SNESKSPSetUseEW(snes,PETSC_TRUE,ierr)
+  ! call SNESKSPSetUseEW(snes,PETSC_TRUE,ierr)
 
   call SNESGetKSP(snes,ksp,ierr)
   call KSPSetFromOptions(ksp,ierr)
@@ -76,7 +76,8 @@ subroutine PetscSolve(psistart,Lambdastart,psisol,Lambdasol)
   call PCSetFromOptions(pc,ierr)
 
   ! call FormFunction(snes,x,rvec,PETSC_NULL_INTEGER,ierr)
-  
+  ! call VecNorm(rvec,NORM_2,normrvec,ierr)
+
   ! Solve the nonlinear problem with PETSc
   call SNESSolve(snes,PETSC_NULL_VEC,x,ierr)
 
@@ -127,7 +128,7 @@ subroutine Preconditioning(psi,lambdaval,rhs,fvals)
   one = 1.d0
   do II=0,pnws-1
      ix(II) = II
-     fvals(II) = (B_BC(II+1)+rhs(II+1))
+     fvals(II) = (B_BC(II+1)+lambdaval*rhs(II+1))
   end do
   
   call KSPCreate(PETSC_COMM_WORLD,ksp,ierr)
@@ -144,7 +145,7 @@ subroutine Preconditioning(psi,lambdaval,rhs,fvals)
   call VecCreateSeq(PETSC_COMM_WORLD,pnws,b,ierr)
   call VecDuplicate(b,x,ierr)
 
-  ! Set b to (B + rhs)
+  ! Set b to (B + L*rhs)
   call VecSetValues(b,pnws,ix,fvals,INSERT_VALUES,ierr)
   call VecAssemblyBegin(b,ierr)
   call VecAssemblyEnd(b,ierr)
@@ -154,7 +155,7 @@ subroutine Preconditioning(psi,lambdaval,rhs,fvals)
   call VecGetValues(x,pnws,ix,fvals,ierr)
 
   do II=0,pnws
-     fvals(II) = psi(II+1)-lambdaval*fvals(II)
+     fvals(II) = psi(II+1)-fvals(II)
   end do
 
   call KSPDestroy(ksp,ierr)
@@ -203,7 +204,7 @@ subroutine FormFunction(snes,x,f,user,ierr)
   call VecGetValues(x,pnws,ix,psi,ierr)
   call PsiMaximum(psi,rmax,psimaxval,.true.)
   call RightHandSide(psi,ppfun,rhs)
-  
+
   Lind(0) = pnws
   call VecGetValues(x,ione,Lind,Larray,ierr)
   lambdaval = Larray(0)

@@ -15,9 +15,12 @@ subroutine Run
   implicit none
   real(rkind), external :: ppfun
   
-  call Evolve(PsiCur,ppfun,AllPsis,ntsmax)
+  ! call Evolve(PsiCur,ppfun,AllPsis,ntsmax)
 
-  ! call PetscSolve(PsiCur,1._rkind,PsiFinal,LambdaFinal)
+  call PetscSolve(PsiCur,PsiFinal,LambdaFinal)
+
+  ! PsiCur = AllPsis(:,ilast)
+  ! call PetscSolve(PsiCur,PsiFinal,LambdaFinal)
 
 end subroutine Run
 
@@ -57,10 +60,16 @@ subroutine ReadNamelist
   npsi = 50
   ntheta = 64
 
+  ! written with python or with fortran
+  ! guesstype = 1 --> solution from Finite Differences version
+  ! guesstype = 2 --> solution from the present Finite Element Version
+  guesstype = 1
+
   namelist /frc/ &
        &    nr,nz,length,psiedge,ntsmax,psimax, &
        &    tol,gaussorder, nboundarypoints,relax,Itotal, &
-       &    npsi,ntheta
+       &    npsi,ntheta, &
+       &    guesstype
 
   mp = 101
   open(mp, file ='nlfrc', delim = 'apostrophe', &
@@ -162,7 +171,11 @@ subroutine Initialize
   ! call ReadPprime
 
   ! Interpolate the guess to obtain a guess with size nws containing also the field derivatives 
-  call InterpolatePsi(PsiGuess,nzguess,nrguess,PsiCur)
+  if (guesstype.eq.1) then
+     call InterpolatePsi1(PsiGuess1,nzguess,nrguess,PsiCur)
+  elseif (guesstype.eq.2) then
+     call InterpolatePsi2(PsiGuess2,nzguess,nrguess,PsiCur)
+  end if
 
   ! Computing beforehand all possible types of R**i/(R+a) integrals for matrix preparation
   call AllRIntegrals
@@ -194,17 +207,19 @@ function ppfun(psi)
   ! b1 = 0.25867
   ! d1 = 0.920*41.244
 
-  a1 = 170.64_rkind
-  b1 = 0.69919_rkind
-  d1 = 3.0156_rkind
+  ! a1 = 170.64_rkind
+  ! b1 = 0.69919_rkind
+  ! d1 = 3.0156_rkind
 
   ! ppfun = 0._rkind
   ! do i=1,npprime
      ! ppfun = ppfun + Apprime(i)*psi**(i-1)
-  ppfun = d1/cosh(a1*psi-b1)**2
+  ! ppfun = d1/cosh(a1*psi-b1)**2
   ! end do
 
   ! ppfun = seval(npprime,psi,Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
+
+  ppfun = 1._rkind
 
 end function ppfun
 
@@ -300,13 +315,19 @@ subroutine Finalize
 
   deallocate(R,Z,RR,ZZ,logRp1sR,PsiBC,IndArray,IndArrayInv,RIntegralArray,ContributionMat)
   deallocate(B_BC)
-  deallocate(PsiGuess,PsiCur,rhs,AllPsis)
+  deallocate(PsiCur,rhs,AllPsis)
+
+  if (guesstype.eq.1) then
+     deallocate(PsiGuess1)
+  elseif (guesstype.eq.2) then
+     deallocate(PsiGuess2)
+  end if
   ! deallocate(Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
   ! deallocate(Apprime)
 
 end subroutine Finalize
 
-subroutine InterpolatePsi(Psizrg,nzg,nrg,Psi)
+subroutine InterpolatePsi1(Psizrg,nzg,nrg,Psi)
   ! Transform a 2D psi array into an array adapted to the finite element
   ! Psizrg is typically a 2D guess z,r array
   ! Psi is in the form of a size nws array
@@ -377,7 +398,28 @@ subroutine InterpolatePsi(Psizrg,nzg,nrg,Psi)
      end if
   end do
 
-end subroutine InterpolatePsi
+end subroutine InterpolatePsi1
+
+subroutine InterpolatePsi2(Psinwsg,nzg,nrg,Psi)
+  use globals
+  implicit none
+  integer, intent(in) :: nzg,nrg
+  real(rkind), dimension(nwsguess), intent(in) :: Psinwsg
+  real(rkind), dimension(nws), intent(out) :: Psi
+  real(rkind), dimension(nzg) :: zg
+  real(rkind), dimension(nrg) :: rg
+  real(rkind) :: dzg,drg
+  real(rkind) :: z0,z1,r0,r1
+  integer :: ind
+  integer :: iZ,iR,k
+  integer :: izg,irg
+  real(rkind) :: t,u
+  real(rkind) :: zind,rind
+  real(rkind) :: psi00,psi01,psi10,psi11
+
+  Psi = 0._rkind
+
+end subroutine InterpolatePsi2
 
 subroutine Evolve(PsiIni,fun,Psis,nts)
   ! Simple Picard algorithm to find psi
@@ -386,10 +428,10 @@ subroutine Evolve(PsiIni,fun,Psis,nts)
   real(rkind), dimension(nws), intent(in) :: PsiIni
   integer, intent(in) :: nts
   real(rkind), dimension(nws,nts+1), intent(out) :: Psis
-  real(rkind), dimension(nts+1) :: Cs
+  real(rkind), dimension(nts+1) :: Lambdas
   real(rkind), external :: fun
   
-  real(rkind) :: C
+  real(rkind) :: Lambda
   real(rkind), dimension(nws) :: Psi1,Psi2
   real(rkind) :: ratio,n_,n_star
   real(rkind) :: Itot
@@ -405,55 +447,62 @@ subroutine Evolve(PsiIni,fun,Psis,nts)
   if (mod(nz,2).eq.1) equatorial = .true.
 
   Psis = 0._rkind
-  Cs = 0._rkind
+  Lambdas = 0._rkind
 
   i = 1
   dtpsi = tol
   Psis(:,i) = PsiIni
-  Cs(i) = 1._rkind
-  ! C is a Lagrange multiplier to respect the constraint of maximum psi
-  C = 29.6195935435900_rkind
+  Lambdas(i) = Lambdaini
+  ! Lambda is a Lagrange multiplier to respect the constraint of maximum psi
+  Lambda = LambdaIni
+  write(*,'(A,E12.4)'), 'Initial Lambda =', Lambda
   ! call TotalCurrent(PsiIni,fun,Itot)
   ! Itot = Itotal
 
   Psi1(:) = PsiIni(:)
 
-  do while (i.le.nts .and. dtpsi.ge.tol)
-     i = i+1
+  write(*,'(A)'), ' Iteration      Lambda       dtpsi'
+  ! Do at least 10 iterations
+  do while ((i.le.nts .and. dtpsi.ge.tol) .or. (i.le.10))
      ! One step is to solve A psinew = rhs(psiold) 
      ! and update psi2 = psiold + relax*(psinew-psiold)
-     call FEMStep(Psi1,funC,Psi2)
+     call FEMStep(Psi1,funLambda,Psi2)
      ! Compute norm difference between old and new solutions
      call DiffNorm(nws,Psi1,Psi2,dtpsi)
      ! call TotalCurrent(Psi2,fun,Icur)
      ! Compute Psimax
      call PsiMaximum(Psi2,rmax,psimaxcur,equatorial)
-     ! C = Itot/Icur
+     ! Lambda = Itot/Icur
      ! Update the Lagrange multiplier
-     C = C*psimax/psimaxcur
-     write(*,'(2E12.4)'), C,dtpsi
+     Lambda = Lambda*psimax/psimaxcur
+     write(*,'(I10,2E12.4)'), i,Lambda,dtpsi
      ! Update psi
+     i = i+1
      Psis(:,i) = Psi2(:)
      Psi1(:) = Psi2(:)
   end do
 
-  ilast = i
-  LambdaFinal = C
+  if (dtpsi.ge.tol) then
+     print*, 'Maximum number of iterations reached'
+  end if
 
-  ! call TotalCurrent(Psi2,funC,Icur)
+  ilast = i
+  LambdaFinal = Lambda
+
+  ! call TotalCurrent(Psi2,funLambda,Icur)
 
   ! write(*,'(A,2E12.4)') 'Total current at convergence = ', Icur
 
 contains
   
-  function funC(psi)
-    ! return ppfun times the Lagrange multiplier C
+  function funLambda(psi)
+    ! return ppfun times the Lagrange multiplier Lambda
     implicit none
-    real(rkind) :: psi,funC
+    real(rkind) :: psi,funLambda
 
-    funC = fun(psi)*C
+    funLambda = fun(psi)*Lambda
 
-  end function funC
+  end function funLambda
   
 end subroutine Evolve
 
@@ -486,8 +535,6 @@ subroutine FEMStep(Psi,fun,PsiSol)
 
   ! Compute psi dependent part of the right hand side (integrals of R*pprime(psi) )
   call RightHandSide(Psi,fun,rhs)
-
-  print*, 'Matrix solve'
 
   ! Set right hand side
   pnws = nws

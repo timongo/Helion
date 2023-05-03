@@ -7,6 +7,7 @@ module globals
   integer :: nws,nkws
   integer :: ntot
   integer :: nzguess,nrguess
+  integer :: nwsguess
   real(rkind) :: lguess
   real(rkind) :: length,hlength
   real(rkind) :: psiedge
@@ -29,7 +30,10 @@ module globals
   real(rkind) :: drguess,dzguess
   real(rkind) :: theta1,theta2,theta3,theta4
 
-  real(rkind), allocatable, dimension(:,:) :: PsiGuess
+  integer :: guesstype
+
+  real(rkind), allocatable, dimension(:,:) :: PsiGuess1
+  real(rkind), allocatable, dimension(:) :: PsiGuess2
   real(rkind), allocatable, dimension(:) :: R,Z
   real(rkind), allocatable, dimension(:) :: logRp1sR
   real(rkind), dimension(4) :: dRdZ
@@ -44,7 +48,7 @@ module globals
   real(rkind), allocatable, dimension(:) :: B_BC
   real(rkind), allocatable, dimension(:) :: PsiCur
   real(rkind), allocatable, dimension(:) :: PsiFinal
-  real(rkind) :: LambdaFinal
+  real(rkind) :: LambdaIni,LambdaFinal
   real(rkind), allocatable, dimension(:,:) :: AllPsis
   real(rkind), allocatable, dimension(:) :: rhs
 
@@ -57,6 +61,8 @@ module globals
   ! real(rkind), allocatable, dimension(:) :: Dpprime
 
   Mat      :: PAMat
+
+  integer,save :: count=0
   
 end module globals
 

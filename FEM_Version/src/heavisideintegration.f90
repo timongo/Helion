@@ -79,9 +79,12 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
   real(rkind) :: rval
   integer :: i
 
+  real(rkind), parameter :: zeror = 0._rkind
+  real(rkind), parameter :: oner = 1._rkind
+
   if (case.eq.1) then
 
-     z0 = zbrent(gz0,0._rkind,1._rkind,ztol)
+     z0 = zbrent(gz0,zeror,oner,ztol)
      z1 = 1._rkind
 
      call linspace(z0,z1,n,zs)
@@ -89,14 +92,14 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
 
      do i=2,n
         zval = zs(i)
-        rs(i) = zbrent(gz0r,0._rkind,1._rkind,ztol)
+        rs(i) = zbrent(gz0r,zeror,oner,ztol)
      end do
 
      call dblquad(fzr,z0,z1,zero,rsinterp,res)
 
   else if (case.eq.2) then
 
-     z0 = zbrent(gz1,0._rkind,1._rkind,ztol)
+     z0 = zbrent(gz1,zeror,oner,ztol)
      z1 = 1._rkind
 
      call linspace(z0,z1,n,zs)
@@ -105,7 +108,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
 
      do i=2,n
         zval = zs(i)
-        rs(i) = zbrent(gz0r,0._rkind,1._rkind,ztol)
+        rs(i) = zbrent(gz0r,zeror,oner,ztol)
      end do
 
      call dblquad(fzr,z0,z1,rsinterp,one,res)
@@ -113,7 +116,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
   else if (case.eq.3) then
 
      z0 = 0._rkind
-     z1 = zbrent(gz1,0._rkind,1._rkind,ztol)
+     z1 = zbrent(gz1,zeror,oner,ztol)
 
      call linspace(z0,z1,n,zs)
      rs = 0._rkind
@@ -121,7 +124,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
 
      do i=1,n-1
         zval = zs(i)
-        rs(i) = zbrent(gz0r,0._rkind,1._rkind,ztol)
+        rs(i) = zbrent(gz0r,zeror,oner,ztol)
      end do
 
      call dblquad(fzr,z0,z1,rsinterp,one,res)
@@ -129,14 +132,14 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
   else if (case.eq.4) then
 
      z0 = 0._rkind
-     z1 = zbrent(gz0,0._rkind,1._rkind,ztol)
+     z1 = zbrent(gz0,zeror,oner,ztol)
 
      call linspace(z0,z1,n,zs)
      rs = 0._rkind
 
      do i=1,n-1
         zval = zs(i)
-        rs(i) = zbrent(gz0r,0._rkind,1._rkind,ztol)
+        rs(i) = zbrent(gz0r,zeror,oner,ztol)
      end do
 
      call dblquad(fzr,z0,z1,zero,rsinterp,res)
@@ -151,7 +154,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
 
      do i=1,n
         zval = zs(i)
-        rs(i) = zbrent(gz0r,0._rkind,1._rkind,ztol)
+        rs(i) = zbrent(gz0r,zeror,oner,ztol)
      end do
 
      call dblquad(fzr,z0,z1,zero,rsinterp,res)
@@ -166,7 +169,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
 
      do i=1,n
         zval = zs(i)
-        rs(i) = zbrent(gz0r,0._rkind,1._rkind,ztol)
+        rs(i) = zbrent(gz0r,zeror,oner,ztol)
      end do
 
      call dblquad(fzr,z0,z1,rsinterp,one,res)
@@ -181,7 +184,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
 
      do i=1,n
         rval = rs(i)
-        zs(i) = zbrent(gzr0,0._rkind,1._rkind,ztol)
+        zs(i) = zbrent(gzr0,zeror,oner,ztol)
      end do
 
      call dblquad(frz,r0,r1,zsinterp,one,res)
@@ -196,7 +199,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
 
      do i=1,n
         rval = rs(i)
-        zs(i) = zbrent(gzr0,0._rkind,1._rkind,ztol)
+        zs(i) = zbrent(gzr0,zeror,oner,ztol)
      end do
 
      call dblquad(frz,r0,r1,zero,zsinterp,res)
@@ -204,7 +207,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
   else if (case.eq.9) then
 
      z0 = 0._rkind
-     z0_ = zbrent(gz0,0._rkind,1._rkind,ztol)
+     z0_ = zbrent(gz0,zeror,oner,ztol)
      z1 = 1._rkind
 
      call linspace(z0_,z1,n,zs)
@@ -212,7 +215,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
 
      do i=2,n
         zval = zs(i)
-        rs(i) = zbrent(gz0r,0._rkind,1._rkind,ztol)
+        rs(i) = zbrent(gz0r,zeror,oner,ztol)
      end do
 
      call dblquad(fzr,z0,z0_,zero,one,res)
@@ -223,7 +226,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
   else if (case.eq.10) then
 
      z0 = 0._rkind
-     z0_ = zbrent(gz1,0._rkind,1._rkind,ztol)
+     z0_ = zbrent(gz1,zeror,oner,ztol)
      z1 = 1._rkind
 
      call linspace(z0_,z1,n,zs)
@@ -232,7 +235,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
 
      do i=2,n
         zval = zs(i)
-        rs(i) = zbrent(gz0r,0._rkind,1._rkind,ztol)
+        rs(i) = zbrent(gz0r,zeror,oner,ztol)
      end do
 
      call dblquad(fzr,z0,z0_,zero,one,res)
@@ -243,7 +246,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
   else if (case.eq.11) then
 
      z0 = 0._rkind
-     z0_ = zbrent(gz1,0._rkind,1._rkind,ztol)
+     z0_ = zbrent(gz1,zeror,oner,ztol)
      z1 = 1._rkind
 
      call linspace(z0,z0_,n,zs)
@@ -252,7 +255,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
 
      do i=1,n-1
         zval = zs(i)
-        rs(i) = zbrent(gz0r,0._rkind,1._rkind,ztol)
+        rs(i) = zbrent(gz0r,zeror,oner,ztol)
      end do
 
      call dblquad(fzr,z0,z0_,zero,rsinterp,res)
@@ -263,7 +266,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
   else if (case.eq.12) then
 
      z0 = 0._rkind
-     z0_ = zbrent(gz0,0._rkind,1._rkind,ztol)
+     z0_ = zbrent(gz0,zeror,oner,ztol)
      z1 = 1._rkind
 
      call linspace(z0,z0_,n,zs)
@@ -272,7 +275,7 @@ subroutine Case_1to12(fzr,gzr,case,n,res)
 
      do i=1,n-1
         zval = zs(i)
-        rs(i) = zbrent(gz0r,0._rkind,1._rkind,ztol)
+        rs(i) = zbrent(gz0r,zeror,oner,ztol)
      end do
 
      call dblquad(fzr,z0,z0_,rsinterp,one,res)
@@ -338,6 +341,7 @@ end subroutine Case_1to12
 
 function zbrent(func,x1,x2,tol) 
   use prec_const
+  use ieee_arithmetic
   implicit none
   real(rkind) :: zbrent,tol,x1,x2,func
   EXTERNAL func
@@ -347,18 +351,20 @@ function zbrent(func,x1,x2,tol)
   ! Parameters: Maximum allowed number of iterations, and machine floating-point precision.
   integer iter
   real(rkind) a,b,c,d,e,fa,fb,fc,p,q,r,s,tol1,xm
+
   a=x1
   b=x2
   fa=func(a)
   fb=func(b)
-  if((fa.gt.0..and.fb.gt.0.).or.(fa.lt.0..and.fb.lt.0.))  then
+  if((fa.gt.0._rkind.and.fb.gt.0._rkind).or.(fa.lt.0._rkind.and.fb.lt.0._rkind))  then
      print*, 'root must be bracketed for zbrent' 
-     stop
+     zbrent = ieee_value(eps,  ieee_positive_inf)
+     return
   end if
   c=b
   fc=fb
   do iter=1,ITMAX
-     if((fb.gt.0..and.fc.gt.0.).or.(fb.lt.0..and.fc.lt.0.)) then
+     if((fb.gt.0._rkind.and.fc.gt.0._rkind).or.(fb.lt.0._rkind.and.fc.lt.0._rkind)) then
         c=a !Rename a, b, c and adjust bounding interval d. 
         fc=fa
         d=b-a
@@ -372,26 +378,26 @@ function zbrent(func,x1,x2,tol)
         fb=fc
         fc=fa
      endif
-     tol1=2.*EPS*abs(b)+0.5*tol ! Convergence check
-     xm=.5*(c-b)
-     if(abs(xm).le.tol1 .or. fb.eq.0.)then
+     tol1=2._rkind*EPS*abs(b)+0.5_rkind*tol ! Convergence check
+     xm=.5_rkind*(c-b)
+     if(abs(xm).le.tol1 .or. fb.eq.0._rkind)then
         zbrent=b
         return 
      endif
      if(abs(e).ge.tol1 .and. abs(fa).gt.abs(fb)) then
         s=fb/fa ! Attempt inverse quadratic interpolation. 
         if(a.eq.c) then
-           p=2.*xm*s
-           q=1.-s
+           p=2._rkind*xm*s
+           q=1._rkind-s
         else
            q=fa/fc
            r=fb/fc 
-           p=s*(2.*xm*q*(q-r)-(b-a)*(r-1.))
-           q=(q-1.)*(r-1.)*(s-1.)
+           p=s*(2._rkind*xm*q*(q-r)-(b-a)*(r-1._rkind))
+           q=(q-1._rkind)*(r-1._rkind)*(s-1._rkind)
         endif
-        if(p.gt.0.) q=-q ! Check whether in bounds. 
+        if(p.gt.0._rkind) q=-q ! Check whether in bounds. 
         p=abs(p)
-        if(2.*p .lt. min(3.*xm*q-abs(tol1*q),abs(e*q))) then
+        if(2._rkind*p .lt. min(3._rkind*xm*q-abs(tol1*q),abs(e*q))) then
            e=d ! Accept interpolation.
            d=p/q
         else
@@ -479,8 +485,6 @@ subroutine TestHeaviside(case)
   real(rkind) :: res
   integer :: i
 
-
-  ! print*, 'Case', case
   if (case.eq.1) then
      do i=2,10
         call HeavisideQuad(fxy1,fxy1,i,res)

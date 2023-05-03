@@ -25,14 +25,11 @@ subroutine Save
   call matwrtM(mp,'CM',1,256*(nr-1),ContributionMat)
   call matwrtM(mp,'B',nws,1,B_BC)
 
-  call matwrtI1(mp,'nzguess',nzguess)
-  call matwrtI1(mp,'nrguess',nrguess)
-  call matwrtM(mp,'PsiGuess',nzguess,nrguess,PsiGuess)
   call matwrtM(mp,'PsiCur',nws,1,PsiCur)
 
-  call matwrtI1(mp,'ilast',ilast)
-  call matwrtM(mp,'AllPsis',nws,ilast,AllPsis(:,1:ilast))
-  PsiFinal = AllPsis(:,ilast)
+  ! call matwrtI1(mp,'ilast',ilast)
+  ! call matwrtM(mp,'AllPsis',nws,ilast,AllPsis(:,1:ilast))
+  ! PsiFinal = AllPsis(:,ilast)
 
   call matwrtM1(mp,'CSol',LambdaFinal)
   call matwrtM(mp,'PsiSol',nws,1,PsiFinal)
@@ -42,7 +39,15 @@ subroutine Save
   close(mp)
   close(mp+1)
 
-  call PsiMaximum(AllPsis(:,ilast),psimaxval,.true.)
+  ! write guess
+  call openbin(mp,'solution_guess_write_FEM.bin','unformatted','write','big_endian')
+  write(mp) nz
+  write(mp) nr
+  write(mp) length
+  write(mp) nws
+  write(mp) LambdaFinal
+  write(mp) PsiFinal
+  close(mp)
 
 end subroutine Save
 
@@ -77,33 +82,45 @@ subroutine ReadGuess
   integer :: i
 
   mp = 101
-  
-  open(mp, file='guess.dat', status='old', access='stream', form='unformatted')
-  read(mp) sizes_dpr
-  close(mp)
-  nzguess = int(sizes_dpr(1))
-  nrguess = int(sizes_dpr(2))
-  lguess = sizes_dpr(3)
 
-  dzguess = 1._rkind/real(nzguess-1,rkind)*length
-  drguess = 1._rkind/real(nrguess-1,rkind)
 
-  if (lguess.ne.length) then
-     print*, 'length must be equal to that of the guess'
-     stop
+  if (guesstype.eq.1) then
+     call openbin(mp,'solution_guess_read_FD.bin','unformatted','read','big_endian')
+     read(mp) nzguess
+     read(mp) nrguess
+     read(mp) lguess
+     read(mp) LambdaIni
+
+     allocate(PsiGuess1(nzguess,nrguess))
+
+     read(mp) PsiGuess1
+
+     close(mp)
+
+  elseif (guesstype.eq.2) then
+     
+     call openbin(mp,'solution_guess_read_FEM.bin','unformatted','read','big_endian')
+     read(mp) nzguess
+     read(mp) nrguess
+     read(mp) lguess
+     read(mp) nwsguess
+     read(mp) LambdaIni
+
+     allocate(PsiGuess2(nwsguess))
+
+     read(mp) PsiGuess2
+
+     close(mp)
   end if
-
-  ! allocate(psig(nrguess,nzguess))
-  allocate(PsiGuess(nzguess,nrguess))
-
-  open(mp, file='guess.bin', status='old', access='stream', form='unformatted')
-  read(mp) PsiGuess
-  close(mp)
-
-  ! PsiGuess = transpose(psig)
-
-  ! deallocate(psig)
-
+  
+  dzguess = 1._rkind/real(nzguess-1,rkind)*lguess
+  drguess = 1._rkind/real(nrguess-1,rkind)
+  
+  if (lguess.ne.length) then
+     print*, "length is not equal to that of the guess. Are you sure you know what you're doing?"
+     write(*,'(A,E12.4,A,E12.4)') 'Length = ', length, 'while guess length is', lguess
+  end if
+  
 end subroutine ReadGuess
 
 subroutine ReadPprime
