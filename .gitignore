@@ -53,7 +53,6 @@ frc
 Equilibrium_xS0.5.npz
 frc_almostok.f90
 frc_bak.f90
-mesh.f90
 psielong.npz
 quadpack.f90
 quadpack_double
