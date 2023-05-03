@@ -1,9 +1,9 @@
  &frc
- nz = 103,
- nr = 62,
+ nz = 203,
+ nr = 152,
  guesstype=1,
  length = 10.,
- psiedge = -0.5, ! must be negative
+ psiedge = -0.65, ! must be negative
  psimax = 0.06,
  ntsmax = 1000,
  tol = 1.e-6,

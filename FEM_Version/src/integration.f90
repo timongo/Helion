@@ -1,32 +1,3 @@
-subroutine PsiIntegral(psi,res)
-  use globals
-  implicit none
-  real(rkind), dimension(4,4), intent(inout) :: psi
-  real(rkind), intent(out) :: res
-  real(rkind) :: x0,x1
-  real(rkind), external :: zero,one
-
-  x0 = 0._rkind
-  x1 = 1._rkind
-
-  call dblquad(fzr,x0,x1,zero,one,res)
-
-  contains
-    function fzr(z,r)
-      real(rkind) :: fzr,z,r
-      integer :: i,j
-      
-      fzr = 0._rkind
-      do i=0,3
-         do j=0,3
-            fzr = fzr + psi(i+1,j+1)*z**i*r**j
-         end do
-      end do
-         
-    end function fzr
-
-end subroutine PsiIntegral
-
 function zero(z)
   use prec_const
   implicit none

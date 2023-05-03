@@ -1,15 +1,43 @@
-module globals
-#include <petsc/finclude/petscksp.h>
-  use prec_const
+module sizes_indexing
+#include <petsc/finclude/petscmat.h>
   use petsc
+  use prec_const
+  type :: indices
+     integer :: nz,nr
+     integer :: nws,nkws
+     integer :: ntot
+     real(rkind) :: length,hlength
+     real(rkind) :: deltar,deltaz
+     real(rkind), dimension(4) :: dRdZ
+     real(rkind), allocatable, dimension(:) :: Z,R
+     real(rkind), allocatable, dimension(:,:) :: ZZ,RR
+     integer, allocatable, dimension(:,:) :: IndArray
+     integer, allocatable, dimension(:,:,:) :: IndArrayInv
+     real(rkind), allocatable, dimension(:) :: logRp1sR
+     real(rkind), allocatable, dimension(:,:,:) :: PsiBC
+     real(rkind), allocatable, dimension(:,:) :: RIntegralArray
+     real(rkind), allocatable, dimension(:,:,:,:,:,:,:) :: ContributionMat
+     real(rkind), allocatable, dimension(:) :: B_BC
+     real(rkind), allocatable, dimension(:,:) :: AllPsis
+     real(rkind), allocatable, dimension(:) :: PsiCur
+     real(rkind), allocatable, dimension(:) :: PsiFinal
+     real(rkind), allocatable, dimension(:) :: rhs
+     real(rkind), dimension(4,4,0:1,0:1,4) :: CoeffMat
+     Mat      :: PAMat
+  end type indices
+end module sizes_indexing
 
-  integer :: nz,nr
-  integer :: nws,nkws
-  integer :: ntot
-  integer :: nzguess,nrguess
-  integer :: nwsguess
-  real(rkind) :: lguess
-  real(rkind) :: length,hlength
+module globals
+  use prec_const
+  use sizes_indexing
+
+  ! container for indices of the coarse problem
+  type(indices) :: inds_c
+  ! container for indices for refined problem
+  type(indices) :: inds_r
+  ! container for indices of the guess
+  type(indices) :: inds_g
+  
   real(rkind) :: psiedge
   real(rkind) :: current
   integer :: gaussorder
@@ -26,31 +54,13 @@ module globals
   integer :: ntheta
   real(rkind) :: LagMulC
 
-  real(rkind) :: deltar,deltaz
-  real(rkind) :: drguess,dzguess
   real(rkind) :: theta1,theta2,theta3,theta4
 
   integer :: guesstype
 
   real(rkind), allocatable, dimension(:,:) :: PsiGuess1
-  real(rkind), allocatable, dimension(:) :: PsiGuess2
-  real(rkind), allocatable, dimension(:) :: R,Z
-  real(rkind), allocatable, dimension(:) :: logRp1sR
-  real(rkind), dimension(4) :: dRdZ
   real(rkind), dimension(16,16) :: Hmat
-  real(rkind), allocatable, dimension(:,:) :: RR,ZZ
-  integer, allocatable, dimension(:,:) :: IndArray
-  integer, allocatable, dimension(:,:,:) :: IndArrayInv
-  real(rkind), dimension(4,4,0:1,0:1,4) :: CoeffMat
-  real(rkind), allocatable, dimension(:,:,:) :: PsiBC
-  real(rkind), allocatable, dimension(:,:) :: RIntegralArray
-  real(rkind), allocatable, dimension(:,:,:,:,:,:,:) :: ContributionMat
-  real(rkind), allocatable, dimension(:) :: B_BC
-  real(rkind), allocatable, dimension(:) :: PsiCur
-  real(rkind), allocatable, dimension(:) :: PsiFinal
   real(rkind) :: LambdaIni,LambdaFinal
-  real(rkind), allocatable, dimension(:,:) :: AllPsis
-  real(rkind), allocatable, dimension(:) :: rhs
 
   integer :: npprime
   real(rkind), allocatable, dimension(:) :: Apprime
@@ -59,8 +69,6 @@ module globals
   ! real(rkind), allocatable, dimension(:) :: Bpprime
   ! real(rkind), allocatable, dimension(:) :: Cpprime
   ! real(rkind), allocatable, dimension(:) :: Dpprime
-
-  Mat      :: PAMat
 
   integer,save :: count=0
   

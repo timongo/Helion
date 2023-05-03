@@ -1,12 +1,15 @@
-subroutine RightHandSide(Psi,fun,rrhs)
+subroutine RightHandSide(inds,Psi,fun,rrhs)
   ! In the rhs construction, boundary refers to the plasma vacuum boundary,
   ! not to the domain boundary
   ! For each line of the rhs vector, there is one value for omega
   ! The integral int omega R p'(psi) on the whole domain is then comuted
-  use globals
+  use prec_const
+  use sizes_indexing
   implicit none
-  real(rkind), dimension(nws), intent(in) :: Psi
-  real(rkind), dimension(nws), intent(out) :: rrhs
+  type(indices), intent(inout) :: inds
+
+  real(rkind), dimension(inds%nws), intent(in) :: Psi
+  real(rkind), dimension(inds%nws), intent(out) :: rrhs
   real(rkind), external :: fun
   real(rkind) :: res
   integer :: ipatch,npatches               
@@ -16,19 +19,19 @@ subroutine RightHandSide(Psi,fun,rrhs)
   integer :: iZ,iR,k
   real(rkind), dimension(4,4) :: omega
   real(rkind) :: psi00,psi01,psi10,psi11
-  real(rkind),dimension(nws+nkws) :: PsiAll
+  real(rkind),dimension(inds%ntot) :: PsiAll
   logical :: boundary
 
   rrhs = 0._rkind
 
   ! Psi has size nws, PsiAll has size nws+nkws and contains BC information
-  call FillPsiAll(Psi,Psiall)
+  call FillPsiAll(inds,Psi,Psiall)
 
-  do ind=1,nws
-     call FindPatches(ind,npatches,patches)
-     iZo = IndArray(ind,1)
-     iRo = IndArray(ind,2)
-     ko = IndArray(ind,3)
+  do ind=1,inds%nws
+     call FindPatches(inds,ind,npatches,patches)
+     iZo = inds%IndArray(ind,1)
+     iRo = inds%IndArray(ind,2)
+     ko = inds%IndArray(ind,3)
 
      do ipatch=1,npatches
         ! Sum the contributions of each patch around the node where omega is nonzero
@@ -36,7 +39,7 @@ subroutine RightHandSide(Psi,fun,rrhs)
         iR = patches(ipatch,2)
         io = iZo - iZ
         jo = iRo - iR
-        omega = CoeffMat(:,:,io,jo,ko)
+        omega = inds%CoeffMat(:,:,io,jo,ko)
 
         ! For each patch, the values of psi at the four corner must be retrieved
         ! If they are all negative, the patch lives fully in the vacuum region, there is
@@ -45,13 +48,13 @@ subroutine RightHandSide(Psi,fun,rrhs)
         ! integral is performed using gauss quadrature
         ! Otherwise, it means the patch is across the plasma/vacuum boundary, and a special
         ! treatment is required to handle the 'heaviside function' character of the integrand
-        jnd = IndArrayInv(iZ  ,iR  ,1)
+        jnd = inds%IndArrayInv(iZ  ,iR  ,1)
         psi00 = PsiAll(jnd)
-        jnd = IndArrayInv(iZ+1,iR  ,1)
+        jnd = inds%IndArrayInv(iZ+1,iR  ,1)
         psi10 = PsiAll(jnd)
-        jnd = IndArrayInv(iZ  ,iR+1,1)
+        jnd = inds%IndArrayInv(iZ  ,iR+1,1)
         psi01 = PsiAll(jnd)
-        jnd = IndArrayInv(iZ+1,iR+1,1)
+        jnd = inds%IndArrayInv(iZ+1,iR+1,1)
         psi11 = PsiAll(jnd)
 
         ! Special case iR=1
@@ -60,12 +63,12 @@ subroutine RightHandSide(Psi,fun,rrhs)
            if (sign(1._rkind,psi01)*sign(1._rkind,psi11).lt.0._rkind) then
               ! Patch contains a plasma/vacuum boundary
               boundary = .true.
-              call RHSPatch(omega,PsiAll,iZ,iR,fun,boundary,res)
+              call RHSPatch(inds,omega,PsiAll,iZ,iR,fun,boundary,res)
               rrhs(ind) = rrhs(ind) + res
            else if (sign(1._rkind,psi01).ge.0._rkind .and. psi11.ge.0._rkind) then
               ! Patch is in plasma and does not contain a plasma/vacuum boundary
               boundary = .false.
-              call RHSPatch(omega,PsiAll,iZ,iR,fun,boundary,res)
+              call RHSPatch(inds,omega,PsiAll,iZ,iR,fun,boundary,res)
               rrhs(ind) = rrhs(ind) + res
            end if
         else
@@ -75,7 +78,7 @@ subroutine RightHandSide(Psi,fun,rrhs)
                    & sign(1._rkind,psi11).gt.0._rkind) then
                  ! Patch contains a plasma/vacuum boundary
                  boundary = .true.
-                 call RHSPatch(omega,PsiAll,iZ,iR,fun,boundary,res)
+                 call RHSPatch(inds,omega,PsiAll,iZ,iR,fun,boundary,res)
                  rrhs(ind) = rrhs(ind) + res
               end if
            else if(sign(1._rkind,psi00).ge.0._rkind) then
@@ -84,12 +87,12 @@ subroutine RightHandSide(Psi,fun,rrhs)
                    & sign(1._rkind,psi11).gt.0._rkind) then
                  ! Patch does not contain a plasma/vacuum boundary
                  boundary = .false.
-                 call RHSPatch(omega,PsiAll,iZ,iR,fun,boundary,res)
+                 call RHSPatch(inds,omega,PsiAll,iZ,iR,fun,boundary,res)
                  rrhs(ind) = rrhs(ind) + res
               else              
                  ! Patch contains a plasma/vacuum boundary
                  boundary = .true.
-                 call RHSPatch(omega,PsiAll,iZ,iR,fun,boundary,res)
+                 call RHSPatch(inds,omega,PsiAll,iZ,iR,fun,boundary,res)
                  rrhs(ind) = rrhs(ind) + res
               end if
            end if
@@ -99,19 +102,21 @@ subroutine RightHandSide(Psi,fun,rrhs)
 
 end subroutine RightHandSide
 
-subroutine TotalCurrent(Psi,fun,Itot)
+subroutine TotalCurrent(inds,Psi,fun,Itot)
   ! In the rhs construction, boundary refers to the plasma vacuum boundary,
   ! not to the domain boundary
-  use globals
+  use prec_const
+  use sizes_indexing
   implicit none
-  real(rkind), dimension(nws), intent(in) :: Psi
+  type(indices), intent(inout) :: inds
+  real(rkind), dimension(inds%nws), intent(in) :: Psi
   real(rkind), intent(out) :: Itot
   real(rkind), external :: fun
   real(rkind) :: res
   integer :: ind
   integer :: iZ,iR,k
   real(rkind) :: psi00,psi01,psi10,psi11
-  real(rkind),dimension(nws+nkws) :: PsiAll
+  real(rkind),dimension(inds%ntot) :: PsiAll
   logical :: boundary
 
   print*, 'Total current computation'
@@ -119,31 +124,31 @@ subroutine TotalCurrent(Psi,fun,Itot)
   Itot = 0._rkind
 
   ! Psi has size nws, PsiAll has size nws+nkws and contains BC information
-  call FillPsiAll(Psi,PsiAll)
+  call FillPsiAll(inds,Psi,PsiAll)
 
-  do iZ=1,nz-1
+  do iZ=1,inds%nZ-1
      ! Special case iR=1
      ! required because when iR=1, psi00 and psi10 are always zero
      iR = 1
-     ind = IndArrayInv(iZ  ,iR+1,1)
+     ind = inds%IndArrayInv(iZ  ,iR+1,1)
      psi01 = PsiAll(ind)
-     ind = IndArrayInv(iZ+1,iR+1,1)
+     ind = inds%IndArrayInv(iZ+1,iR+1,1)
      psi11 = PsiAll(ind)
 
      if (sign(1._rkind,psi01)*sign(1._rkind,psi11).lt.0._rkind) then
         ! Patch contains a plasma/vacuum boundary
         boundary = .true.
-        call CurrentPatch(PsiAll,iZ,iR,fun,boundary,res)
+        call CurrentPatch(inds,PsiAll,iZ,iR,fun,boundary,res)
         Itot = Itot + res
      else if (sign(1._rkind,psi01).ge.0._rkind .and. psi11.ge.0._rkind) then
         ! Patch is in plasma and does not contain a plasma/vacuum boundary
         boundary = .false.
-        call CurrentPatch(PsiAll,iZ,iR,fun,boundary,res)
+        call CurrentPatch(inds,PsiAll,iZ,iR,fun,boundary,res)
         Itot = Itot + res
      end if
      
      ! General case iR>0
-     do iR=2,nr-1
+     do iR=2,inds%nR-1
 
         ! For each patch, the values of psi at the four corner must be retrieved
         ! If they are all negative, the patch lives fully in the vacuum region, there is
@@ -152,13 +157,13 @@ subroutine TotalCurrent(Psi,fun,Itot)
         ! integral is performed using gauss quadrature
         ! Otherwise, it means the patch is across the plasma/vacuum boundary, and a special
         ! treatment is required to handle the 'heaviside function' character of the integrand
-        ind = IndArrayInv(iZ  ,iR  ,1)
+        ind = inds%IndArrayInv(iZ  ,iR  ,1)
         psi00 = PsiAll(ind)
-        ind = IndArrayInv(iZ+1,iR  ,1)
+        ind = inds%IndArrayInv(iZ+1,iR  ,1)
         psi10 = PsiAll(ind)
-        ind = IndArrayInv(iZ  ,iR+1,1)
+        ind = inds%IndArrayInv(iZ  ,iR+1,1)
         psi01 = PsiAll(ind)
-        ind = IndArrayInv(iZ+1,iR+1,1)
+        ind = inds%IndArrayInv(iZ+1,iR+1,1)
         psi11 = PsiAll(ind)
 
         if (sign(1._rkind,psi00).lt.0._rkind) then
@@ -167,7 +172,7 @@ subroutine TotalCurrent(Psi,fun,Itot)
                 & sign(1._rkind,psi11).gt.0._rkind) then
               ! Patch contains a plasma/vacuum boundary
               boundary = .true.
-              call CurrentPatch(PsiAll,iZ,iR,fun,boundary,res)
+              call CurrentPatch(inds,PsiAll,iZ,iR,fun,boundary,res)
               Itot = Itot + res
            end if
         else if(sign(1._rkind,psi00).ge.0._rkind) then
@@ -176,12 +181,12 @@ subroutine TotalCurrent(Psi,fun,Itot)
                 & sign(1._rkind,psi11).gt.0._rkind) then
               ! Patch does not contain a plasma/vacuum boundary
               boundary = .false.
-              call CurrentPatch(PsiAll,iZ,iR,fun,boundary,res)
+              call CurrentPatch(inds,PsiAll,iZ,iR,fun,boundary,res)
               Itot = Itot + res
            else              
               ! Patch contains a plasma/vacuum boundary
               boundary = .true.
-              call CurrentPatch(PsiAll,iZ,iR,fun,boundary,res)
+              call CurrentPatch(inds,PsiAll,iZ,iR,fun,boundary,res)
               Itot = Itot + res
            end if
         end if
@@ -209,13 +214,13 @@ subroutine EvalPsiPatch(psi,z,r,psival)
 
 end subroutine EvalPsiPatch
 
-subroutine EvaldZPsiPatch(psi,z,r,psival)
+subroutine EvaldZPsiPatch(psi,z,r,dz,psival)
   ! Compute the value of dpsidZ within a patch at the point z,r (in [0,1]x[0,1]) of the patch
   use prec_const
-  use globals, only : deltaz
   implicit none
   real(rkind), intent(in), dimension(4,4) :: psi
   real(rkind), intent(in) :: z,r
+  real(rkind), intent(in) :: dz
   real(rkind), intent(out) :: psival
   integer :: m,n
 
@@ -227,17 +232,17 @@ subroutine EvaldZPsiPatch(psi,z,r,psival)
      end do
   end do
 
-  psival = psival/deltaz
+  psival = psival/dz
 
 end subroutine EvaldZPsiPatch
 
-subroutine EvaldRPsiPatch(psi,z,r,psival)
+subroutine EvaldRPsiPatch(psi,z,r,dr,psival)
   ! Compute the value of dpsidR within a patch at the point z,r (in [0,1]x[0,1]) of the patch
   use prec_const
-  use globals, only : deltar
   implicit none
   real(rkind), intent(in), dimension(4,4) :: psi
   real(rkind), intent(in) :: z,r
+  real(rkind), intent(in) :: dr
   real(rkind), intent(out) :: psival
   integer :: m,n
 
@@ -249,17 +254,17 @@ subroutine EvaldRPsiPatch(psi,z,r,psival)
      end do
   end do
 
-  psival = psival/deltar
+  psival = psival/dr
 
 end subroutine EvaldRPsiPatch
 
-subroutine EvaldZdRPsiPatch(psi,z,r,psival)
+subroutine EvaldZdRPsiPatch(psi,z,r,dz,dr,psival)
   ! Compute the value of d2psidZdR within a patch at the point z,r (in [0,1]x[0,1]) of the patch
   use prec_const
-  use globals, only : deltar,deltaz
   implicit none
   real(rkind), intent(in), dimension(4,4) :: psi
   real(rkind), intent(in) :: z,r
+  real(rkind), intent(in) :: dz,dr
   real(rkind), intent(out) :: psival
   integer :: m,n
 
@@ -271,11 +276,11 @@ subroutine EvaldZdRPsiPatch(psi,z,r,psival)
      end do
   end do
 
-  psival = psival/(deltar*deltaz)
+  psival = psival/(dr*dz)
 
 end subroutine EvaldZdRPsiPatch
 
-subroutine Jphi(psi,fun,z,r,jval)
+subroutine JphiPatch(psi,fun,z,r,jval)
   ! Computes pprime(psi(z,r)) with z,r in [0,1]x[0,1] within the considered patch
   use prec_const
   implicit none
@@ -289,13 +294,16 @@ subroutine Jphi(psi,fun,z,r,jval)
 
   jval = fun(psi)
 
-end subroutine Jphi
+end subroutine JphiPatch
 
-subroutine PsiPatch(PsiAll,iZ,iR,psi)
+subroutine PsiPatch(inds,PsiAll,iZ,iR,psi)
   ! extracts the psi(i,j) array from the PsiAll array, using the Hermite matrix
-  use globals
+  use prec_const
+  use sizes_indexing
+  use globals, only : Hmat
   implicit none
-  real(rkind), dimension(nws+nkws), intent(in) :: PsiAll
+  type(indices), intent(inout) :: inds
+  real(rkind), dimension(inds%ntot), intent(in) :: PsiAll
   integer, intent(in) :: iZ,iR
   real(rkind), dimension(4,4), intent(out) :: psi
   real(rkind), dimension(16) :: f,alpha
@@ -307,11 +315,11 @@ subroutine PsiPatch(PsiAll,iZ,iR,psi)
      do j=0,1
         do k=1,4
            l = 1+i+2*j+4*(k-1)
-           ind = IndArrayInv(iZ+i,iR+j,k)
+           ind = inds%IndArrayInv(iZ+i,iR+j,k)
            ! The multiplication by dRdZ is necessary to transform derivatives with respect to
            ! Z and R into derivatives with respect to z,r where z,r are 
            ! the local coordinates in the patch, varying in [0,1]x[0,1]
-           f(l) = dRdZ(k)*PsiAll(ind)
+           f(l) = inds%dRdZ(k)*PsiAll(ind)
         end do
      end do
   end do
@@ -325,17 +333,20 @@ subroutine PsiPatch(PsiAll,iZ,iR,psi)
 
 end subroutine PsiPatch
 
-subroutine CurrentPatch(PsiAll,iZ,iR,fun,boundary,res)
-  use globals
+subroutine CurrentPatch(inds,PsiAll,iZ,iR,fun,boundary,res)
+  use prec_const
+  use sizes_indexing
+  use globals, only : nboundarypoints,gaussorder
   implicit none
-  real(rkind), dimension(nws+nkws), intent(in) :: PsiAll
+  type(indices), intent(inout) :: inds
+  real(rkind), dimension(inds%ntot), intent(in) :: PsiAll
   integer, intent(in) :: iZ,iR
   real(rkind), external :: fun
   logical, intent(in) :: boundary
   real(rkind), intent(out) :: res
   real(rkind), dimension(4,4) :: psi
 
-  call PsiPatch(PsiAll,iZ,iR,psi)
+  call PsiPatch(inds,PsiAll,iZ,iR,psi)
 
   if (boundary) then
      ! Special integration package required if across boundary
@@ -345,7 +356,7 @@ subroutine CurrentPatch(PsiAll,iZ,iR,fun,boundary,res)
      call Gauss2DQuad(CurInt,gaussorder,res)
   end if
 
-  res = res*deltar**2*deltaz
+  res = res*inds%deltar**2*inds%deltaz
 
 contains
   
@@ -364,7 +375,7 @@ contains
     integer :: m,n
     real(rkind) :: jval
     
-    call Jphi(psi,fun,z,r,jval)
+    call JphiPatch(psi,fun,z,r,jval)
 
     I = (real(iR-1,rkind)+r)*jval
 
@@ -372,18 +383,21 @@ contains
 
 end subroutine CurrentPatch
 
-subroutine RHSPatch(omega,PsiAll,iZ,iR,fun,boundary,res)
-  use globals
+subroutine RHSPatch(inds,omega,PsiAll,iZ,iR,fun,boundary,res)
+  use prec_const
+  use sizes_indexing
+  use globals, only : nboundarypoints,gaussorder
   implicit none
+  type(indices), intent(inout) :: inds
   real(rkind), dimension(4,4), intent(in) :: omega
-  real(rkind), dimension(nws+nkws), intent(in) :: PsiAll
+  real(rkind), dimension(inds%ntot), intent(in) :: PsiAll
   integer, intent(in) :: iZ,iR
   real(rkind), external :: fun
   logical, intent(in) :: boundary
   real(rkind), intent(out) :: res
   real(rkind), dimension(4,4) :: psi
   
-  call PsiPatch(PsiAll,iZ,iR,psi)
+  call PsiPatch(inds,PsiAll,iZ,iR,psi)
 
   if (boundary) then
      ! Special integration package required if across boundary
@@ -393,7 +407,7 @@ subroutine RHSPatch(omega,PsiAll,iZ,iR,fun,boundary,res)
      call Gauss2DQuad(CurInt,gaussorder,res)
   end if
 
-  res = res*deltar**2*deltaz
+  res = res*inds%deltar**2*inds%deltaz
 
 contains
   
@@ -420,7 +434,7 @@ contains
        end do
     end do
 
-    call Jphi(psi,fun,z,r,jval)
+    call JphiPatch(psi,fun,z,r,jval)
 
     I = I*(real(iR-1,rkind)+r)*jval
 
@@ -428,23 +442,25 @@ contains
 
 end subroutine RHSPatch
 
-subroutine FillPsiAll(Psi,PsiAll)
+subroutine FillPsiAll(inds,Psi,PsiAll)
   ! Psi has size nws, PsiAll has size nws+nkws and contains BC information
-  use globals
+  use prec_const
+  use sizes_indexing
   implicit none
-  real(rkind), dimension(nws), intent(in) :: Psi
-  real(rkind), dimension(nws+nkws), intent(out) :: PsiAll
+  type(indices), intent(inout) :: inds
+  real(rkind), dimension(inds%nws), intent(in) :: Psi
+  real(rkind), dimension(inds%ntot), intent(out) :: PsiAll
   integer :: ind
   integer :: iZ,iR,k
   
   PsiAll = 0._rkind
 
-  PsiAll(:nws) = Psi(:)
-  do ind=nws,nws+nkws
-     iZ = IndArray(ind,1)
-     iR = IndArray(ind,2)
-     k = IndArray(ind,3)
-     PsiAll(ind) = PsiBC(iZ,iR,k)
+  PsiAll(:inds%nws) = Psi(:)
+  do ind=inds%nws,inds%ntot
+     iZ = inds%IndArray(ind,1)
+     iR = inds%IndArray(ind,2)
+     k = inds%IndArray(ind,3)
+     PsiAll(ind) = inds%PsiBC(iZ,iR,k)
   end do
 
 end subroutine FillPsiAll

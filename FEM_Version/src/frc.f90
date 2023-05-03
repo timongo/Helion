@@ -17,7 +17,14 @@ subroutine Run
   
   ! call Evolve(PsiCur,ppfun,AllPsis,ntsmax)
 
-  call PetscSolve(PsiCur,PsiFinal,LambdaFinal)
+  call PetscSolve(inds_c,LambdaFinal)
+  
+  inds_c%PsiCur = inds_c%PsiFinal
+
+  call InterpolatePsi2(inds_c,inds_r)
+
+  LambdaIni = LambdaFinal
+  call PetscSolve(inds_r,LambdaFinal)
 
   ! PsiCur = AllPsis(:,ilast)
   ! call PetscSolve(PsiCur,PsiFinal,LambdaFinal)
@@ -29,11 +36,19 @@ subroutine ReadNamelist
   use globals
   implicit none
   
+  integer :: nzc,nrc
+  integer :: nz,nr
+  real(rkind) :: length,hlength
+
   integer :: mp
 
-  ! sizes
-  nz = 100
+  ! sizes for refined problem
+  nz = 101
   nr = 100
+  ! sizes for coarse problem
+  nzc = 53
+  nrc = 32
+
   length = 1._rkind
   ! psi at the boundary in R=1
   psiedge = -0.5_rkind
@@ -66,7 +81,7 @@ subroutine ReadNamelist
   guesstype = 1
 
   namelist /frc/ &
-       &    nr,nz,length,psiedge,ntsmax,psimax, &
+       &    nzc,nrc,nz,nr,length,psiedge,ntsmax,psimax, &
        &    tol,gaussorder, nboundarypoints,relax,Itotal, &
        &    npsi,ntheta, &
        &    guesstype
@@ -79,6 +94,16 @@ subroutine ReadNamelist
 
   ! half length
   hlength = 0.5_rkind*length
+
+  inds_r%nz = nz
+  inds_r%nr = nr
+  inds_r%length = length
+  inds_r%hlength = hlength
+
+  inds_c%nz = nzc
+  inds_c%nr = nrc
+  inds_c%length = length
+  inds_c%hlength = hlength
 
 end subroutine ReadNamelist
 
@@ -96,63 +121,27 @@ subroutine Initialize
 
   call ReadNamelist
 
-  allocate(Z(nz),R(nr),RR(nz,nr),ZZ(nz,nr),logRp1sR(nr), &
-       &   PsiBC(nz,nr,4), &
-       &   IndArray(nz*nr*4,3), &
-       &   IndArrayInv(nz,nr,4), &
-       &   RIntegralArray(0:6,nr-1), &
-       &   ContributionMat(0:1,0:1,4,0:1,0:1,4,nr-1))
-
-  ! Constructing Z,R arrays
-  deltar = 1._rkind/real(nr-1,rkind)
-  do i=1,nr
-     R(i) = real(i-1,rkind)/real(nr-1,rkind)
-     RR(:,i) = real(i-1,rkind)/real(nr-1,rkind)
-  end do
-
-  deltaz = 1._rkind/real(nz-1,rkind)*length
-  do i=1,nz
-     Z(i) = real(i-1,rkind)/real(nz-1,rkind)*length - length/2._rkind
-     ZZ(i,:) = real(i-1,rkind)/real(nz-1,rkind)*length - length/2._rkind
-  end do
-  
-  ! dRdZ array is used to transform quantities like dpsi/dZ into dpsi/dZbar, where Zbar goes from 0 to 1 within a patch
-  dRdZ(1) = 1._rkind
-  dRdZ(2) = deltaz
-  dRdZ(3) = deltar
-  dRdZ(4) = deltar*deltaz
-
-  ! log(1+R/dR)/(R/dR) is involved in the radial integrations when building the matrix
-  logRp1sR(1) = 0._rkind
-  do i=2,nr
-     logRp1sR(i) = log((1._rkind+R(i)/deltar)/(R(i)/deltar))
-  end do
-
-  ! (nR-2)*(nZ-2)*4 : bulk values
-  ! 2*(nZ-2) : 2 unknowns per R=1 edge point, with a total of nZ points (psi and dpsi/dZ are known)
-  ! 4*(nR-2) : 2 unknowns per Z=+-L/2 edge point (psi, dRpsi are known)
-  ! 2 : 1 unknown (d2psi/dRdZ) per top corner
-  ! No unknowns on bottom edge (including corners)
-  nws = (nr-2)*(nz-2)*4 + 2*(nz-2)+4*(nr-2)+2 ! number of unknowns
-  nkws = nr*nz*4-nws ! number of known values (boundary conditions)
-  ntot = nws+nkws ! total size of array needed to reconstruct psi
-
-  allocate(B_BC(nws),PsiCur(nws),PsiFinal(nws),rhs(nws),AllPsis(nws,ntsmax+1))
+  call Arrays(inds_c)
+  call Arrays(inds_r)
 
   ! This matrix transforms the set of psi and its derivatives and the four corners of a patch into the array aij such that psi = sum_(i,j) aij Z**i R**j (Z and R going from 0 to 1 on a patch) 
   call HermiteMatrix
 
   ! Gives the answer to the question 'What is iR,iZ and field type if I know ind (from 1 to nws)?'
-  call Ind_to_iRiZ
+  call Ind_to_iRiZ(inds_c)
+  call Ind_to_iRiZ(inds_r)
 
   ! Gives the answer to the question 'What is ind (from 1 to nws) if I know iR,iZ and field type?'
-  call iRiZ_to_Ind
+  call iRiZ_to_Ind(inds_c)
+  call iRiZ_to_Ind(inds_r)
 
   ! Uses the Hermite matrix to compute all possible aij for all 16 base cases (4 locations on a patch times 4 field types)
-  call AllCoeffs
+  call AllCoeffs(inds_c)
+  call AllCoeffs(inds_r)
   
   ! This sets the nkws values that are known due to the boundary conditions
-  call PsiBoundaryCondition
+  call PsiBoundaryCondition(inds_c)
+  call PsiBoundaryCondition(inds_r)
 
   ! Initialize petsc
   call PetscInitialize(PETSC_NULL_CHARACTER,ierr)
@@ -172,24 +161,105 @@ subroutine Initialize
 
   ! Interpolate the guess to obtain a guess with size nws containing also the field derivatives 
   if (guesstype.eq.1) then
-     call InterpolatePsi1(PsiGuess1,nzguess,nrguess,PsiCur)
+     call InterpolatePsi1(inds_g,inds_c)
   elseif (guesstype.eq.2) then
-     call InterpolatePsi2(PsiGuess2,nzguess,nrguess,PsiCur)
+     call InterpolatePsi2(inds_g,inds_c)
+     call DeallocateArrays(inds_g)
   end if
 
   ! Computing beforehand all possible types of R**i/(R+a) integrals for matrix preparation
-  call AllRIntegrals
-  ! Computing all possible values for the matrix elements
-  call Aij_all  
-  ! Assembling the matrix as well as the boundary condition part of the right hand side
-  call SETUPAB
+  call AllRIntegrals(inds_c)
+  call AllRIntegrals(inds_r)
 
-  ! Just a test
-  call TotalCurrent(PsiCur,ppfun,Itot)
+  ! Computing all possible values for the matrix elements
+  call Aij_all(inds_c)
+  call Aij_all(inds_r)
+  ! Assembling the matrix as well as the boundary condition part of the right hand side
+  call SETUPAB(inds_c)
+  call SETUPAB(inds_r)
 
   ilast = 1
 
 end subroutine Initialize
+
+subroutine Arrays(inds)
+  use sizes_indexing
+  use prec_const
+  use globals, only: ntsmax
+  implicit none
+  type(indices), intent(inout) :: inds
+  integer :: nz,nr
+  integer :: nws
+  integer :: i
+
+  nZ = inds%nZ
+  nR = inds%nR
+
+  allocate(inds%Z(nZ),inds%R(nR), &
+       &   inds%RR(nZ,nR),inds%ZZ(nZ,nR), &
+       &   inds%logRp1sR(nR), &
+       &   inds%PsiBC(nZ,nR,4), &
+       &   inds%IndArray(nZ*nR*4,3), &
+       &   inds%IndArrayInv(nZ,nR,4), &
+       &   inds%RIntegralArray(0:6,nR-1), &
+       &   inds%ContributionMat(0:1,0:1,4,0:1,0:1,4,nR-1))
+
+  ! Constructing Z,R arrays
+  inds%deltar = 1._rkind/real(nR-1,rkind)
+  do i=1,nR
+     inds%R(i) = real(i-1,rkind)/real(nR-1,rkind)
+     inds%RR(:,i) = real(i-1,rkind)/real(nR-1,rkind)
+  end do
+
+  inds%deltaz = 1._rkind/real(nZ-1,rkind)*inds%length
+  do i=1,nZ
+     inds%Z(i) = real(i-1,rkind)/real(nZ-1,rkind)*inds%length - inds%hlength
+     inds%ZZ(i,:) = real(i-1,rkind)/real(nZ-1,rkind)*inds%length - inds%hlength
+  end do
+  
+  ! dRdZ array is used to transform quantities like dpsi/dZ into dpsi/dZbar, where Zbar goes from 0 to 1 within a patch
+  inds%dRdZ(1) = 1._rkind
+  inds%dRdZ(2) = inds%deltaz
+  inds%dRdZ(3) = inds%deltar
+  inds%dRdZ(4) = inds%deltar*inds%deltaz
+
+  ! log(1+R/dR)/(R/dR) is involved in the radial integrations when building the matrix
+  inds%logRp1sR(1) = 0._rkind
+  do i=2,nR
+     inds%logRp1sR(i) = log((1._rkind+inds%R(i)/inds%deltar)/(inds%R(i)/inds%deltar))
+  end do
+
+  ! (nR-2)*(nZ-2)*4 : bulk values
+  ! 2*(nZ-2) : 2 unknowns per R=1 edge point, with a total of nZ points (psi and dpsi/dZ are known)
+  ! 4*(nR-2) : 2 unknowns per Z=+-L/2 edge point (psi, dRpsi are known)
+  ! 2 : 1 unknown (d2psi/dRdZ) per top corner
+  ! No unknowns on bottom edge (including corners)
+  nws = (nR-2)*(nZ-2)*4 + 2*(nZ-2)+4*(nR-2)+2 ! number of unknowns
+  inds%nws = nws
+  inds%nkws = nR*nZ*4-nws ! number of known values (boundary conditions)
+  inds%ntot = inds%nws+inds%nkws ! total size of array needed to reconstruct psi
+
+  allocate(inds%B_BC(nws),      &
+       &   inds%PsiCur(nws),    &
+       &   inds%PsiFinal(nws),  &
+       &   inds%rhs(nws),       &
+       &   inds%AllPsis(nws,ntsmax+1))
+
+end subroutine Arrays
+
+subroutine DeallocateArrays(inds)
+  use sizes_indexing
+  implicit none
+  type(indices), intent(inout) :: inds
+  integer :: nz,nr
+  integer :: i
+
+  deallocate(inds%Z,inds%R,inds%ZZ,inds%RR, &
+       &     inds%logRp1sR,inds%PsiBC,inds%IndArray,inds%IndArrayInv, &
+       &     inds%RIntegralArray,inds%ContributionMat, &
+       &     inds%B_BC,inds%PsiCur,inds%PsiFinal,inds%rhs,inds%AllPsis)  
+
+end subroutine DeallocateArrays
 
 function ppfun(psi)
   ! pprime function
@@ -223,31 +293,33 @@ function ppfun(psi)
 
 end function ppfun
 
-subroutine PsiBoundaryCondition
+subroutine PsiBoundaryCondition(inds)
   ! This sets the nkws values that are known due to the boundary conditions
   ! psi = R**2*psiedge
-  use globals
+  use globals, only : psiedge
+  use prec_const
+  use sizes_indexing
   implicit none
-
+  type(indices), intent(inout) :: inds
   integer :: iZ,iR
 
-  psiBC = 0._rkind
+  inds%psiBC = 0._rkind
 
-  do iR=1,nR-1
-     PsiBC(1,iR,1) = psiedge*R(iR)**2
-     PsiBC(1,iR,3) = 2._rkind*psiedge*R(iR)
-     PsiBC(nz,iR,1) = psiedge*R(iR)**2
-     PsiBC(nz,iR,3) = 2._rkind*psiedge*R(iR)
+  do iR=1,inds%nR-1
+     Inds%PsiBC(1,iR,1) = psiedge*inds%R(iR)**2
+     Inds%PsiBC(1,iR,3) = 2._rkind*psiedge*inds%R(iR)
+     Inds%PsiBC(inds%nZ,iR,1) = psiedge*inds%R(iR)**2
+     Inds%PsiBC(inds%nZ,iR,3) = 2._rkind*psiedge*inds%R(iR)
   end do
 
-  do iZ=2,nZ-1
-     PsiBC(iZ,nR,1) = psiedge
+  do iZ=2,inds%nZ-1
+     Inds%PsiBC(iZ,inds%nR,1) = psiedge
   end do
 
-  PsiBC(1,nR,1) = psiedge
-  PsiBC(1,nR,3) = 2._rkind*psiedge
-  PsiBC(nZ,nR,1) = psiedge
-  PsiBC(nZ,nR,3) = 2._rkind*psiedge
+  Inds%PsiBC(1,inds%nR,1) = psiedge
+  Inds%PsiBC(1,inds%nR,3) = 2._rkind*psiedge
+  Inds%PsiBC(inds%nZ,inds%nR,1) = psiedge
+  Inds%PsiBC(inds%nZ,inds%nR,3) = 2._rkind*psiedge
 
 end subroutine PsiBoundaryCondition
 
@@ -309,37 +381,34 @@ subroutine Finalize
 
   PetscErrorCode :: ierr
 
-  call MatDestroy(PAMat,ierr)
+  call MatDestroy(inds_c%PAMat,ierr)
+  call MatDestroy(inds_r%PAMat,ierr)
 
   call PetscFinalize(PETSC_NULL_CHARACTER,ierr)
 
-  deallocate(R,Z,RR,ZZ,logRp1sR,PsiBC,IndArray,IndArrayInv,RIntegralArray,ContributionMat)
-  deallocate(B_BC)
-  deallocate(PsiCur,rhs,AllPsis)
+  call DeallocateArrays(inds_c)
+  call DeallocateArrays(inds_r)
 
-  if (guesstype.eq.1) then
-     deallocate(PsiGuess1)
-  elseif (guesstype.eq.2) then
-     deallocate(PsiGuess2)
-  end if
   ! deallocate(Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
   ! deallocate(Apprime)
 
 end subroutine Finalize
 
-subroutine InterpolatePsi1(Psizrg,nzg,nrg,Psi)
+subroutine InterpolatePsi1(inds_g,inds)
   ! Transform a 2D psi array into an array adapted to the finite element
   ! Psizrg is typically a 2D guess z,r array
   ! Psi is in the form of a size nws array
-  use globals
+  use prec_const
+  use sizes_indexing
+  use globals, only : PsiGuess1
   implicit none
-  integer, intent(in) :: nzg,nrg
-  real(rkind), dimension(nzg,nrg), intent(in) :: Psizrg
-  real(rkind), dimension(nws), intent(out) :: Psi
-  real(rkind), dimension(nzg) :: zg
-  real(rkind), dimension(nrg) :: rg
+  type(indices), intent(inout) :: inds_g,inds
+  real(rkind), dimension(inds_g%nZ) :: zg
+  real(rkind), dimension(inds_g%nR) :: rg
   real(rkind) :: dzg,drg
   real(rkind) :: z0,z1,r0,r1
+  real(rkind) :: length
+  integer :: nzg,nrg,nws
   integer :: ind
   integer :: iZ,iR,k
   integer :: izg,irg
@@ -347,11 +416,17 @@ subroutine InterpolatePsi1(Psizrg,nzg,nrg,Psi)
   real(rkind) :: zind,rind
   real(rkind) :: psi00,psi01,psi10,psi11
 
-  z0 = -0.5_rkind*length
-  z1 = 0.5_rkind*length
+  length = inds_g%length
+
+  z0 = -0.5_rkind*inds_g%length
+  z1 = 0.5_rkind*inds_g%length
 
   r0 = 0._rkind
   r1 = 1._rkind
+
+  nzg = inds_g%nZ
+  nrg = inds_g%nR
+  nws = inds%nws
 
   call linspace(z0,z1,nzg,zg)
   call linspace(r0,r1,nrg,rg)
@@ -360,12 +435,12 @@ subroutine InterpolatePsi1(Psizrg,nzg,nrg,Psi)
   drg = 1._rkind/real(nrg-1,rkind)
 
   do ind=1,nws
-     iZ = IndArray(ind,1)
-     iR = IndArray(ind,2)
-     k = IndArray(ind,3)
+     iZ = inds%IndArray(ind,1)
+     iR = inds%IndArray(ind,2)
+     k = inds%IndArray(ind,3)
 
-     zind = (Z(iZ)+0.5_rkind*length)/dzg
-     rind = R(iR)/drg
+     zind = (inds%Z(iZ)+0.5_rkind*inds%length)/dzg
+     rind = inds%R(iR)/drg
 
      izg = min(int(zind),nzg-2)
      irg = min(int(rind),nrg-2)
@@ -375,64 +450,77 @@ subroutine InterpolatePsi1(Psizrg,nzg,nrg,Psi)
      izg = izg+1
      irg = irg+1
 
-     psi00 = psizrg(izg  ,irg  )
-     psi10 = psizrg(izg+1,irg  )
-     psi01 = psizrg(izg  ,irg+1)
-     psi11 = psizrg(izg+1,irg+1)
+     psi00 = PsiGuess1(izg  ,irg  )
+     psi10 = PsiGuess1(izg+1,irg  )
+     psi01 = PsiGuess1(izg  ,irg+1)
+     psi11 = PsiGuess1(izg+1,irg+1)
 
      if (k.eq.1) then
         ! psi
-        Psi(ind) = (psi00*(1._rkind-t)*(1._rkind-u) + &
+        inds%PsiCur(ind) = (psi00*(1._rkind-t)*(1._rkind-u) + &
              &      psi10*t*(1._rkind-u) +  &
              &      psi01*(1._rkind-t)*u + &
              &      psi11*t*u)
      else if (k.eq.2) then
         ! dpsi/dz
-        Psi(ind) = (psi10 - psi00)*(1._rkind-u)/dzg + (psi11 - psi01)*u/dzg
+        inds%PsiCur(ind) = (psi10 - psi00)*(1._rkind-u)/dzg + (psi11 - psi01)*u/dzg
      else if (k.eq.3) then
         ! dpsi/dr
-        Psi(ind) = (psi01 - psi00)*(1._rkind-t)/drg + (psi11 - psi10)*t/drg
+        inds%PsiCur(ind) = (psi01 - psi00)*(1._rkind-t)/drg + (psi11 - psi10)*t/drg
      else if (k.eq.4) then
         ! d2psi/dzdr
-        Psi(ind) = (psi11 + psi00 - psi10 - psi01)/(drg*dzg)
+        inds%PsiCur(ind) = (psi11 + psi00 - psi10 - psi01)/(drg*dzg)
      end if
   end do
 
+  deallocate(PsiGuess1)
+
 end subroutine InterpolatePsi1
 
-subroutine InterpolatePsi2(Psinwsg,nzg,nrg,Psi)
-  use globals
+subroutine InterpolatePsi2(inds1,inds2)
+  use prec_const
+  use sizes_indexing
   implicit none
-  integer, intent(in) :: nzg,nrg
-  real(rkind), dimension(nwsguess), intent(in) :: Psinwsg
-  real(rkind), dimension(nws), intent(out) :: Psi
-  real(rkind), dimension(nzg) :: zg
-  real(rkind), dimension(nrg) :: rg
-  real(rkind) :: dzg,drg
-  real(rkind) :: z0,z1,r0,r1
+  type(indices), intent(inout) :: inds1,inds2
+  real(rkind), dimension(inds1%ntot) :: PsiAll
   integer :: ind
   integer :: iZ,iR,k
-  integer :: izg,irg
-  real(rkind) :: t,u
-  real(rkind) :: zind,rind
-  real(rkind) :: psi00,psi01,psi10,psi11
+  real(rkind) :: zv,rv
+  real(rkind) ::psival
 
-  Psi = 0._rkind
+  call FillPsiAll(inds1,inds1%PsiCur,PsiAll)
+
+  do ind=1,inds2%nws
+     iZ = inds2%IndArray(ind,1)
+     iR = inds2%IndArray(ind,2)
+     k = inds2%IndArray(ind,3)
+     
+     zv = inds2%Z(iZ)
+     rv = inds2%R(iR)
+
+     call EvalPsi(inds1,PsiAll,zv,rv,psival,k)
+
+     inds2%PsiCur(ind) = psival
+
+  end do
 
 end subroutine InterpolatePsi2
 
-subroutine Evolve(PsiIni,fun,Psis,nts)
+subroutine Evolve(inds,PsiIni,fun,Psis,nts)
   ! Simple Picard algorithm to find psi
-  use globals
+  use prec_const
+  use sizes_indexing
+  use globals, only : tol, LambdaIni, LambdaFinal, psimax, ilast
   implicit none
-  real(rkind), dimension(nws), intent(in) :: PsiIni
+  type(indices), intent(inout) :: inds
+  real(rkind), dimension(inds%nws), intent(in) :: PsiIni
   integer, intent(in) :: nts
-  real(rkind), dimension(nws,nts+1), intent(out) :: Psis
+  real(rkind), dimension(inds%nws,nts+1), intent(out) :: Psis
   real(rkind), dimension(nts+1) :: Lambdas
   real(rkind), external :: fun
   
   real(rkind) :: Lambda
-  real(rkind), dimension(nws) :: Psi1,Psi2
+  real(rkind), dimension(inds%nws) :: Psi1,Psi2
   real(rkind) :: ratio,n_,n_star
   real(rkind) :: Itot
   real(rkind) :: dtpsi
@@ -444,7 +532,7 @@ subroutine Evolve(PsiIni,fun,Psis,nts)
 
   ! if nz is odd, magnetic axis ought to be located in the equatorial plane z=0
   equatorial = .false.
-  if (mod(nz,2).eq.1) equatorial = .true.
+  if (mod(inds%nZ,2).eq.1) equatorial = .true.
 
   Psis = 0._rkind
   Lambdas = 0._rkind
@@ -466,12 +554,12 @@ subroutine Evolve(PsiIni,fun,Psis,nts)
   do while ((i.le.nts .and. dtpsi.ge.tol) .or. (i.le.10))
      ! One step is to solve A psinew = rhs(psiold) 
      ! and update psi2 = psiold + relax*(psinew-psiold)
-     call FEMStep(Psi1,funLambda,Psi2)
+     call FEMStep(inds,Psi1,funLambda,Psi2)
      ! Compute norm difference between old and new solutions
-     call DiffNorm(nws,Psi1,Psi2,dtpsi)
+     call DiffNorm(inds%nws,Psi1,Psi2,dtpsi)
      ! call TotalCurrent(Psi2,fun,Icur)
      ! Compute Psimax
-     call PsiMaximum(Psi2,rmax,psimaxcur,equatorial)
+     call PsiMaximum(inds,Psi2,rmax,psimaxcur,equatorial)
      ! Lambda = Itot/Icur
      ! Update the Lagrange multiplier
      Lambda = Lambda*psimax/psimaxcur
@@ -506,15 +594,18 @@ contains
   
 end subroutine Evolve
 
-subroutine FEMStep(Psi,fun,PsiSol)
+subroutine FEMStep(inds,Psi,fun,PsiSol)
 #include <petsc/finclude/petsc.h>
 #include <petsc/finclude/petscksp.h>
-  use globals
+  use prec_const
+  use sizes_indexing
   use petscksp
+  use globals, only : relax
   implicit none
+  type(indices), intent(inout) :: inds
 
-  real(rkind), dimension(nws), intent(in) :: Psi
-  real(rkind), dimension(nws), intent(out) :: PsiSol
+  real(rkind), dimension(inds%nws), intent(in) :: Psi
+  real(rkind), dimension(inds%nws), intent(out) :: PsiSol
   real(rkind), external :: fun
   integer :: ind
   real(rkind) :: norm2,norm2_
@@ -527,27 +618,27 @@ subroutine FEMStep(Psi,fun,PsiSol)
   PetscReal :: ptol
   PetscInt :: ione
   PetscInt :: II
-  PetscInt, dimension(0:nws-1) :: ix
-  PetscReal, dimension(0:nws-1) :: pvals
+  PetscInt, dimension(0:inds%nws-1) :: ix
+  PetscReal, dimension(0:inds%nws-1) :: pvals
 
   PC :: pc
   KSP :: ksp
 
   ! Compute psi dependent part of the right hand side (integrals of R*pprime(psi) )
-  call RightHandSide(Psi,fun,rhs)
+  call RightHandSide(inds,Psi,fun,inds%rhs)
 
   ! Set right hand side
-  pnws = nws
-  do II=0,nws-1
+  pnws = inds%nws
+  do II=0,pnws-1
      ix(II) = II
-     pvals(II) = (B_BC(II+1)+rhs(II+1))
+     pvals(II) = (inds%B_BC(II+1)+inds%rhs(II+1))
   end do
   ione = 1
   one = 1.d0
 
   ! Create KSP context for linear solve
   call KSPCreate(PETSC_COMM_WORLD,ksp,ierr)
-  call KSPSetOperators(ksp,PAMat,PAMat,ierr)
+  call KSPSetOperators(ksp,inds%PAMat,inds%PAMat,ierr)
 
   call KSPGetPC(ksp,pc,ierr)
   ptol = 1.e-7
@@ -571,7 +662,7 @@ subroutine FEMStep(Psi,fun,PsiSol)
   call VecGetValues(x,pnws,ix,pvals,ierr)
 
   ! Use them to update the solution with relax
-  PsiSol(1:nws) = Psi(1:nws)*(1._rkind - relax) + relax*pvals(0:pnws-1)
+  PsiSol(1:inds%nws) = Psi(1:inds%nws)*(1._rkind - relax) + relax*pvals(0:pnws-1)
 
   ! Destroy PETSc vectors and ksp context
   call VecDestroy(x,ierr)

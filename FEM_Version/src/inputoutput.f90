@@ -9,57 +9,67 @@ subroutine Save
   call openbin(mp,'FRC.bin','unformatted','write','big_endian')
   open(mp+1, file = 'FRC.dat', FORM = 'formatted', action = 'write')
 
-  call matwrtI1(mp,'nz',nz)
-  call matwrtI1(mp,'nr',nr)
-  call matwrtI1(mp,'nws',nws)
-  call matwrtI1(mp,'nkws',nkws)
-  call matwrtM1(mp,'length',length)
+  call matwrtI1(mp,'nz',inds_r%nZ)
+  call matwrtI1(mp,'nr',inds_r%nR)
+  call matwrtI1(mp,'nws',inds_r%nws)
+  call matwrtI1(mp,'nkws',inds_r%nkws)
+  call matwrtI1(mp,'nzc',inds_c%nZ)
+  call matwrtI1(mp,'nrc',inds_c%nR)
+  call matwrtI1(mp,'nwsc',inds_c%nws)
+  call matwrtI1(mp,'nkwsc',inds_c%nkws)
+  call matwrtM1(mp,'length',inds_r%length)
   call matwrtM1(mp,'psiedge',psiedge)
 
-  call matwrtM(mp,'Z',nz,1,Z)
-  call matwrtM(mp,'R',nr,1,R)
-  call matwrtM(mp,'RR',nz,nr,RR)
-  call matwrtM(mp,'ZZ',nz,nr,ZZ)
+  call matwrtM(mp,'Z',inds_r%nz,1,inds_r%Z)
+  call matwrtM(mp,'R',inds_r%nr,1,inds_r%R)
+  call matwrtM(mp,'RR',inds_r%nz,inds_r%nr,inds_r%RR)
+  call matwrtM(mp,'ZZ',inds_r%nz,inds_r%nr,inds_r%ZZ)
 
-  call matwrtM(mp,'Coeffs',1,256,CoeffMat)
-  call matwrtM(mp,'CM',1,256*(nr-1),ContributionMat)
-  call matwrtM(mp,'B',nws,1,B_BC)
+  call matwrtM(mp,'Z',inds_c%nz,1,inds_c%Z)
+  call matwrtM(mp,'R',inds_c%nr,1,inds_c%R)
+  call matwrtM(mp,'RR',inds_c%nz,inds_c%nr,inds_c%RR)
+  call matwrtM(mp,'ZZ',inds_c%nz,inds_c%nr,inds_c%ZZ)
 
-  call matwrtM(mp,'PsiCur',nws,1,PsiCur)
+  ! call matwrtM(mp,'PsiCur',nws,1,PsiCur)
 
   ! call matwrtI1(mp,'ilast',ilast)
   ! call matwrtM(mp,'AllPsis',nws,ilast,AllPsis(:,1:ilast))
   ! PsiFinal = AllPsis(:,ilast)
 
-  call matwrtM1(mp,'CSol',LambdaFinal)
-  call matwrtM(mp,'PsiSol',nws,1,PsiFinal)
+  call matwrtM1(mp,'LambdaSol',LambdaFinal)
+  call matwrtM(mp,'PsiSol_c',inds_c%nws,1,inds_c%PsiFinal)
+  call matwrtM(mp,'PsiSol',inds_r%nws,1,inds_r%PsiFinal)
 
-  call SaveMesh(mp,PsiFinal)
+  call SaveMesh(mp,inds_r,inds_r%PsiFinal)
 
   close(mp)
   close(mp+1)
 
   ! write guess
-  call openbin(mp,'solution_guess_write_FEM.bin','unformatted','write','big_endian')
-  write(mp) nz
-  write(mp) nr
-  write(mp) length
-  write(mp) nws
+  call openbin(mp,'solution_guess_write_FEM_coarse.bin','unformatted','write','big_endian')
+  write(mp) inds_c%nz
+  write(mp) inds_c%nr
+  write(mp) inds_c%length
+  write(mp) inds_c%nws
+  write(mp) inds_c%nkws
   write(mp) LambdaFinal
-  write(mp) PsiFinal
+  write(mp) inds_c%PsiFinal
   close(mp)
 
 end subroutine Save
 
-subroutine SaveMesh(mp,Psi)
-  use globals
+subroutine SaveMesh(mp,inds,Psi)
+  use prec_const
+  use sizes_indexing
+  use globals, only : npsi,ntheta,LambdaFinal
   implicit none
+  type(indices), intent(inout) :: inds
   integer :: mp
-  real(rkind), dimension(nws), intent(in) :: Psi
+  real(rkind), dimension(inds%nws), intent(in) :: Psi
   real(rkind), dimension(npsi) :: SMesh,PsiMesh,PressureMesh
   real(rkind), dimension(npsi,ntheta+1) :: ZMesh,RMesh,JacobMesh
 
-  call Mesh(Psi,npsi,ntheta,ZMesh,RMesh,JacobMesh,Smesh,PsiMesh,PressureMesh)
+  call Mesh(inds,LambdaFinal,Psi,npsi,ntheta,ZMesh,RMesh,JacobMesh,Smesh,PsiMesh,PressureMesh)
   
   call matwrtM(mp,'s',npsi,1,Smesh)
   call matwrtM(mp,'psi',npsi,1,PsiMesh)
@@ -74,7 +84,9 @@ end subroutine SaveMesh
 subroutine ReadGuess
   use globals
   implicit none
-  real(rkind), dimension(3) :: sizes_dpr
+  integer :: nzguess,nrguess
+  integer :: nwsguess,nkwsguess
+  real(rkind) :: lguess
   ! real(rkind), allocatable, dimension(:,:) :: psig
   
   integer :: mp
@@ -82,7 +94,6 @@ subroutine ReadGuess
   integer :: i
 
   mp = 101
-
 
   if (guesstype.eq.1) then
      call openbin(mp,'solution_guess_read_FD.bin','unformatted','read','big_endian')
@@ -97,6 +108,11 @@ subroutine ReadGuess
 
      close(mp)
 
+     inds_g%nZ = nzguess
+     inds_g%nR = nrguess
+     inds_g%length = lguess
+     inds_g%hlength = 0.5_rkind*lguess
+
   elseif (guesstype.eq.2) then
      
      call openbin(mp,'solution_guess_read_FEM.bin','unformatted','read','big_endian')
@@ -104,21 +120,33 @@ subroutine ReadGuess
      read(mp) nrguess
      read(mp) lguess
      read(mp) nwsguess
+     read(mp) nkwsguess
      read(mp) LambdaIni
 
-     allocate(PsiGuess2(nwsguess))
+     allocate(inds_g%PsiCur(nwsguess))
 
-     read(mp) PsiGuess2
+     read(mp) inds_g%PsiCur
 
      close(mp)
+
+     inds_g%nZ = nzguess
+     inds_g%nR = nrguess
+     inds_g%length = lguess
+     inds_g%hlength = 0.5_rkind*lguess     
+
+     call Ind_to_iRiZ(inds_g)
+     call iRiZ_to_Ind(inds_g)
+     call Arrays(inds_g)
+     call PsiBoundaryCondition(inds_g)
+
   end if
   
-  dzguess = 1._rkind/real(nzguess-1,rkind)*lguess
-  drguess = 1._rkind/real(nrguess-1,rkind)
+  inds_g%deltaz = 1._rkind/real(nzguess-1,rkind)*lguess
+  inds_g%deltar = 1._rkind/real(nrguess-1,rkind)
   
-  if (lguess.ne.length) then
+  if (lguess.ne.inds_c%length) then
      print*, "length is not equal to that of the guess. Are you sure you know what you're doing?"
-     write(*,'(A,E12.4,A,E12.4)') 'Length = ', length, 'while guess length is', lguess
+     write(*,'(A,E12.4,A,E12.4)') 'Length = ', inds_c%length, 'while guess length is', lguess
   end if
   
 end subroutine ReadGuess
