@@ -339,7 +339,7 @@ subroutine Aij_all(inds)
   
   inds%ContributionMat = 0._rkind
 
-  print*, 'Matrix Construction'
+  write(*,'(A,I5,A,I5)') 'Matrix Construction for nz =',inds%nz, ', nr = ', inds%nr
 
   do iR=1,inds%nR-1
      do io=0,1

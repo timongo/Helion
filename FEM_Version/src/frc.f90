@@ -80,11 +80,15 @@ subroutine ReadNamelist
   ! guesstype = 2 --> solution from the present Finite Element Version
   guesstype = 1
 
+  ! By default 0, in that case is not used
+  LambdaNL = 0._rkind
+
   namelist /frc/ &
        &    nzc,nrc,nz,nr,length,psiedge,ntsmax,psimax, &
        &    tol,gaussorder, nboundarypoints,relax,Itotal, &
        &    npsi,ntheta, &
-       &    guesstype
+       &    guesstype, &
+       &    LambdaNL
 
   mp = 101
   open(mp, file ='nlfrc', delim = 'apostrophe', &
@@ -240,10 +244,11 @@ subroutine Arrays(inds)
   inds%ntot = inds%nws+inds%nkws ! total size of array needed to reconstruct psi
 
   allocate(inds%B_BC(nws),      &
-       &   inds%PsiCur(nws),    &
        &   inds%PsiFinal(nws),  &
        &   inds%rhs(nws),       &
        &   inds%AllPsis(nws,ntsmax+1))
+
+  if(.not.allocated(inds%PsiCur)) allocate(inds%PsiCur(nws))
 
 end subroutine Arrays
 
@@ -273,9 +278,13 @@ function ppfun(psi)
   integer :: i
   real(rkind) :: a1,b1,d1
 
-  ! a1 = 33.943
-  ! b1 = 0.25867
-  ! d1 = 0.920*41.244
+  ! a1 = 33.943_rkind
+  ! b1 = 0.25867_rkind
+  ! d1 = 0.920_rkind
+
+  ! ppfun = d1/cosh(a1*psi-b1)**2
+
+  ppfun = 1._rkind
 
   ! a1 = 170.64_rkind
   ! b1 = 0.69919_rkind
@@ -289,7 +298,7 @@ function ppfun(psi)
 
   ! ppfun = seval(npprime,psi,Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
 
-  ppfun = 1._rkind
+  ! ppfun = 1._rkind
 
 end function ppfun
 

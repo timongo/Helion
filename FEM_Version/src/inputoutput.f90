@@ -56,6 +56,17 @@ subroutine Save
   write(mp) inds_c%PsiFinal
   close(mp)
 
+  ! write guess
+  call openbin(mp,'solution_guess_write_FEM_refined.bin','unformatted','write','big_endian')
+  write(mp) inds_r%nz
+  write(mp) inds_r%nr
+  write(mp) inds_r%length
+  write(mp) inds_r%nws
+  write(mp) inds_r%nkws
+  write(mp) LambdaFinal
+  write(mp) inds_r%PsiFinal
+  close(mp)
+
 end subroutine Save
 
 subroutine SaveMesh(mp,inds,Psi)
@@ -134,9 +145,9 @@ subroutine ReadGuess
      inds_g%length = lguess
      inds_g%hlength = 0.5_rkind*lguess     
 
+     call Arrays(inds_g)
      call Ind_to_iRiZ(inds_g)
      call iRiZ_to_Ind(inds_g)
-     call Arrays(inds_g)
      call PsiBoundaryCondition(inds_g)
 
   end if
@@ -149,6 +160,11 @@ subroutine ReadGuess
      write(*,'(A,E12.4,A,E12.4)') 'Length = ', inds_c%length, 'while guess length is', lguess
   end if
   
+  ! if LambdaNL (NL=namelist) is non zero, replace LambdaIni with LambdaNL
+  if (LambdaNL.gt.0_rkind) then
+     LambdaIni = LambdaNL
+  end if
+
 end subroutine ReadGuess
 
 subroutine ReadPprime

@@ -60,7 +60,7 @@ module globals
 
   real(rkind), allocatable, dimension(:,:) :: PsiGuess1
   real(rkind), dimension(16,16) :: Hmat
-  real(rkind) :: LambdaIni,LambdaFinal
+  real(rkind) :: LambdaIni,LambdaFinal,LambdaNL
 
   integer :: npprime
   real(rkind), allocatable, dimension(:) :: Apprime
