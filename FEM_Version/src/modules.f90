@@ -48,7 +48,8 @@ module globals
   real(rkind) :: tol
   real(rkind) :: relax
   real(rkind) :: Itotal
-  real(rkind) :: psimax
+  real(rkind) :: psimax,psimaxval
+  real(rkind) :: Itot_target
 
   integer :: npsi
   integer :: ntheta
@@ -71,6 +72,8 @@ module globals
   ! real(rkind), allocatable, dimension(:) :: Dpprime
 
   integer,save :: count=0
+
+  logical :: usepetsc
   
 end module globals
 

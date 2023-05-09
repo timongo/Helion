@@ -119,8 +119,6 @@ subroutine TotalCurrent(inds,Psi,fun,Itot)
   real(rkind),dimension(inds%ntot) :: PsiAll
   logical :: boundary
 
-  print*, 'Total current computation'
-
   Itot = 0._rkind
 
   ! Psi has size nws, PsiAll has size nws+nkws and contains BC information

@@ -15,20 +15,30 @@ subroutine Run
   implicit none
   real(rkind), external :: ppfun
   
-  ! call Evolve(PsiCur,ppfun,AllPsis,ntsmax)
 
-  call PetscSolve(inds_c,LambdaFinal)
-  
-  inds_c%PsiCur = inds_c%PsiFinal
+  if (usepetsc) then
+     ! coarse grid solve
+     call PetscSolve(inds_c,LambdaFinal)
+     
+     ! Interpolation of coarse result on fine grid
+     inds_c%PsiCur = inds_c%PsiFinal
+     call InterpolatePsi2(inds_c,inds_r)
+     
+     ! Refined grid solve
+     LambdaIni = LambdaFinal
+     call PetscSolve(inds_r,LambdaFinal)
+  else
+     call Evolve(inds_c,inds_c%PsiCur,ppfun,inds_c%AllPsis,ntsmax)
+     inds_c%PsiFinal = inds_c%AllPsis(:,ilast)
 
-  call InterpolatePsi2(inds_c,inds_r)
-
-  LambdaIni = LambdaFinal
-  call PetscSolve(inds_r,LambdaFinal)
-
-  ! PsiCur = AllPsis(:,ilast)
-  ! call PetscSolve(PsiCur,PsiFinal,LambdaFinal)
-
+     ! Interpolation of coarse result on fine grid
+     inds_c%PsiCur = inds_c%PsiFinal
+     call InterpolatePsi2(inds_c,inds_r)
+     
+     ! Refined grid solve
+     LambdaIni = LambdaFinal
+     call PetscSolve(inds_r,LambdaFinal)
+  end if
 end subroutine Run
 
 subroutine ReadNamelist
@@ -83,11 +93,14 @@ subroutine ReadNamelist
   ! By default 0, in that case is not used
   LambdaNL = 0._rkind
 
+  ! Use petsc, by default yes
+  usepetsc = .true.
+
   namelist /frc/ &
        &    nzc,nrc,nz,nr,length,psiedge,ntsmax,psimax, &
        &    tol,gaussorder, nboundarypoints,relax,Itotal, &
        &    npsi,ntheta, &
-       &    guesstype, &
+       &    guesstype, usepetsc, &
        &    LambdaNL
 
   mp = 101
@@ -120,6 +133,7 @@ subroutine Initialize
   real(rkind) :: t0,t1
   real(rkind), external  :: ppfun
   real(rkind) :: Itot
+  real(rkind) :: rmax
 
   PetscErrorCode :: ierr
 
@@ -170,6 +184,11 @@ subroutine Initialize
      call InterpolatePsi2(inds_g,inds_c)
      call DeallocateArrays(inds_g)
   end if
+
+  call PsiMaximum(inds_c,inds_c%PsiCur,rmax,psimaxval,.true.)  
+
+  call TotalCurrent(inds_c,inds_c%PsiCur,ppfun,Itot_target)
+  Itot_target = Itot_target*LambdaIni
 
   ! Computing beforehand all possible types of R**i/(R+a) integrals for matrix preparation
   call AllRIntegrals(inds_c)
@@ -266,25 +285,33 @@ subroutine DeallocateArrays(inds)
 
 end subroutine DeallocateArrays
 
-function ppfun(psi)
+function ppfun(psiv)
   ! pprime function
   use prec_const
-  use globals
+  use globals, only : psimaxval
   implicit none
 
-  real(rkind) :: psi,ppfun
+  real(rkind) :: x,psiv,ppfun
   real(rkind), external :: seval
 
   integer :: i
-  real(rkind) :: a1,b1,d1
+  real(rkind) :: a1,b1,c1,d1
 
-  ! a1 = 33.943_rkind
-  ! b1 = 0.25867_rkind
-  ! d1 = 0.920_rkind
+  ! x = psiv/psimaxval
 
-  ! ppfun = d1/cosh(a1*psi-b1)**2
+  ! a1 = -0.1_rkind
+  ! b1 = -0.10_rkind
+  ! c1 = -0.1_rkind
+  ! d1 = 1._rkind
 
-  ppfun = 1._rkind
+  ! a1 = 0._rkind
+  ! b1 = -0.15_rkind
+  ! c1 = -0.4_rkind
+  ! d1 = 1._rkind
+
+  ! ppfun = a1*x**3 + b1*x**2 + c1*x + d1
+
+  ! ppfun = 1._rkind
 
   ! a1 = 170.64_rkind
   ! b1 = 0.69919_rkind
@@ -298,7 +325,7 @@ function ppfun(psi)
 
   ! ppfun = seval(npprime,psi,Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
 
-  ! ppfun = 1._rkind
+  ppfun = 1._rkind
 
 end function ppfun
 

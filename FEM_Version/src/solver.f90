@@ -67,8 +67,8 @@ subroutine PetscSolve(inds,Lambdasol)
   call SNESSetFunction(snes,rvec,FormFunction,inds,ierr)
   ! call SNESSetJacobian(snes,Jmat,Jmat,FormJacobian,PETSC_NULL_INTEGER,ierr)
   call SNESSetFromOptions(snes,ierr)
-  call SNESGetLineSearch(snes, linesearch, ierr)
-  call SNESLineSearchSetType(linesearch,'basic', ierr)
+  ! call SNESGetLineSearch(snes, linesearch, ierr)
+  ! call SNESLineSearchSetType(linesearch,'basic', ierr)
   ! call SNESKSPSetUseEW(snes,PETSC_TRUE,ierr)
 
   call SNESGetKSP(snes,ksp,ierr)
@@ -173,7 +173,7 @@ subroutine FormFunction(snes,x,f,inds,ierr)
   use petscsnes
   use prec_const
   use sizes_indexing
-  use globals, only : psimax
+  use globals, only : psimax,psimaxval,Itot_target
   implicit none
 
   type(indices) :: inds
@@ -189,14 +189,15 @@ subroutine FormFunction(snes,x,f,inds,ierr)
   PetscScalar, dimension(0:inds%nws-1) :: psi,fvals
   PetscInt :: ione
   PetscInt :: II
-  PetscScalar :: lambdaval
+  PetscScalar :: LambdaVal
 
   PetscScalar, dimension(0:0) :: Larray
   PetscInt, dimension(0:0) :: Lind
 
-  real(rkind) :: rmax,psimaxval
+  real(rkind) :: rmax
   real(rkind), dimension(0:inds%nws-1) :: rhs
   real(rkind), external :: ppfun
+  real(rkind) :: Itot
 
   pnws = inds%nws
   size = pnws+1
@@ -212,7 +213,7 @@ subroutine FormFunction(snes,x,f,inds,ierr)
 
   Lind(0) = pnws
   call VecGetValues(x,ione,Lind,Larray,ierr)
-  lambdaval = Larray(0)
+  LambdaVal = Larray(0)
 
   ! call VecCreateSeq(PETSC_COMM_WORLD,pnws,x_nws,ierr)
   ! call VecDuplicate(x_nws,b_nws,ierr)
@@ -223,17 +224,21 @@ subroutine FormFunction(snes,x,f,inds,ierr)
   
   ! call MatMult(PAMat,x_nws,b_nws,ierr)
 
-  call Preconditioning(inds,psi,lambdaval,rhs,fvals)
+  call Preconditioning(inds,psi,LambdaVal,rhs,fvals)
 
   ! call VecGetValues(b_nws,pnws,ix,fvals,ierr)
 
   ! call VecDestroy(x_nws,ierr)
   ! call VecDestroy(b_nws,ierr)
 
-  ! fvals(:) = fvals(:) - lambdaval*(B_BC(:)+rhs(:))
+  ! fvals(:) = fvals(:) - LambdaVal*(B_BC(:)+rhs(:))
 
   call VecSetValues(f,pnws,ix,fvals,INSERT_VALUES,ierr)
   Larray(0) = psimaxval - psimax
+
+  ! call TotalCurrent(inds,psi,ppfun,Itot)
+
+  ! Larray(0) = LambdaVal*Itot - Itot_target
   call VecSetValues(f,ione,Lind,Larray,INSERT_VALUES,ierr)
 
   call VecAssemblyBegin(f,ierr)

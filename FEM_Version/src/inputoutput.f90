@@ -36,11 +36,17 @@ subroutine Save
   ! call matwrtM(mp,'AllPsis',nws,ilast,AllPsis(:,1:ilast))
   ! PsiFinal = AllPsis(:,ilast)
 
+  ! if (usepetsc) then
   call matwrtM1(mp,'LambdaSol',LambdaFinal)
   call matwrtM(mp,'PsiSol_c',inds_c%nws,1,inds_c%PsiFinal)
   call matwrtM(mp,'PsiSol',inds_r%nws,1,inds_r%PsiFinal)
-
   call SaveMesh(mp,inds_r,inds_r%PsiFinal)
+  ! else
+  !    call matwrtM1(mp,'LambdaSol',LambdaFinal)
+  !    call matwrtM(mp,'PsiSol',inds_c%nws,1,inds_c%PsiFinal)
+  !    call SaveMesh(mp,inds_c,inds_c%PsiFinal)
+  ! end if
+  
 
   close(mp)
   close(mp+1)
