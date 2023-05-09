@@ -7,7 +7,7 @@ program main
 
   call initialization
 
-  call ADI_Solve(psiguess,psi)
+  call Run
 
   call save
 
@@ -15,26 +15,191 @@ program main
 
 end program main
 
+subroutine Run
+  use globals
+  implicit none
+  
+  real(rkind), dimension(10) :: dAP
+  real(rkind) :: norm
+  integer :: i,n
+
+  dAP = AP_NL - AP_guess
+
+  call DiffNorm(10,AP_NL,AP_guess,norm)
+
+  if (norm.lt.0.005_rkind) then
+     AP = AP_NL
+     if (ControlCurrent) then
+        call ADI_Solve_Current(psiguess,psi)
+     else
+        call ADI_Solve(psiguess,psi)
+     end if
+  else
+     n = int(norm*200._rkind)+1
+     write(*,'(A,I3,A)') 'Will try to reach the target in ',n,' steps'
+     do i=1,n
+        AP = AP_guess + dAP*real(i,rkind)/real(n,rkind)
+        write(*,'(A,10E12.4)') 'Solving with AP=',AP
+        if (ControlCurrent) then
+           call ADI_Solve_Current(psiguess,psi)
+        else
+           call ADI_Solve(psiguess,psi)
+        end if
+        psiguess = psi
+     end do
+  end if
+
+end subroutine Run
+
 function ppfun(psiv)
   ! Pprime function in Grad-Shafranov equation
-  use globals
-  real(rkind) :: psiv,ppfun
+  use prec_const
+  use globals, only : psimaxcur,AP
+  real(rkind) :: psiv,ppfun,x
+  integer :: i
+  
+  x = psiv/psimaxcur
 
-  real(rkind) :: a1,b1,d1
+  ! a1 = -0.1_rkind
+  ! b1 = -0.2_rkind
+  ! c1 = .9_rkind
+  ! d1 = 0._rkind
 
-  ! a1 = 3.204_rkind
-  ! b1 = 0.93685_rkind
-  ! d1 = 1.278_rkind
+  ppfun = 0._rkind
+  do i=1,10
+     ppfun = ppfun + AP(i)*x**(i-1)
+  end do
 
   ! a1 = 170.64_rkind
   ! b1 = 0.69919_rkind
   ! d1 = 3.0156_rkind
 
+  ! a1 = 33.943_rkind
+  ! b1 = 0.25867_rkind
+  ! d1 = 0.920_rkind
+
   ! ppfun = pprime
   ! ppfun = d1/cosh(a1*psiv-b1)**2
-  ppfun = 1._rkind
+  ! ppfun = 1._rkind
 
 end function ppfun
+
+subroutine ADI_Solve_Current(psig,psi2)
+  use prec_const
+  use globals
+  implicit none
+
+  real(rkind), dimension(nztot,nrtot), intent(inout) :: psig
+  real(rkind), dimension(nztot,nrtot), intent(out) :: psi2
+  ! real(rkind), intent(in) :: PP
+
+  real(rkind), dimension(nztot,nrtot) :: psi1
+  real(rkind), dimension(nztot,nrtot) :: psi2_star
+  real(rkind), dimension(nztot,nrtot) :: aux
+  real(rkind) :: omega,omegamax
+  real(rkind) :: start,finish
+  integer :: k
+  real(rkind) :: I
+  real(rkind) :: I0
+  real(rkind) :: Lambda
+  real(rkind) :: dtpsi
+
+  real(rkind) :: N
+  real(rkind) :: Nstar
+  real(rkind) :: norm
+  real(rkind) :: ratio
+  real(rkind) :: dnrm2
+  
+  real(rkind), external :: ppfun
+
+  omegamax = 1.e-1_rkind
+
+  omega = omegai
+
+  norm = dnrm2(ntot,psig,1)
+  ! print*, norm
+
+  Lambda = LambdaIni
+  !C = 1._rkind
+  psimaxcur = maxval(psig)
+  I0 = CurrentTarget
+
+  k = 0
+  dtpsi = tol
+
+  print*, 'current = ', I0
+  ! print*, 'psitarget = ', psimax
+
+  do while (k.lt.ntsmax .and. dtpsi.ge.tol)
+     call ADI_Step_omp(omega,Lambda,psig,psi1)
+     call ADI_Step_omp(omega,Lambda,psi1,psi2)
+     call ADI_Step_omp(omega*2._rkind,Lambda,psig,psi2_star)
+
+     call dcopy(ntot,psig,1,aux,1)
+     call daxpy(ntot,-1._rkind,psi1,1,aux,1)
+     N = dnrm2(ntot,aux,1)
+
+     call dcopy(ntot,psi2,1,aux,1)
+     call daxpy(ntot,-1._rkind,psi2_star,1,aux,1)
+     Nstar = dnrm2(ntot,aux,1)
+
+     ratio = Nstar/N
+
+     dtpsi = N/(norm*omega)
+
+     if (mod(k+1,iplot).eq.0 .or. dtpsi.lt.tol) then
+        write(*,'(I6,5E12.4)') k+1,omega,Lambda,ratio,dtpsi/tol
+     end if
+
+     if (ratio.le.0.05_rkind) then
+        k=k+1
+        call dcopy(ntot,psi2,1,psig,1)
+        psimaxcur = maxval(psig)
+        omega = min(omega*4._rkind,omegamax)
+        call TotalCurrent(psi2,1._rkind,I)
+        Lambda = I0/I
+     elseif (ratio.gt.0.05_rkind .and. ratio.le.0.1_rkind) then
+        k = k+1
+        call dcopy(ntot,psi2,1,psig,1)
+        psimaxcur = maxval(psig)
+        omega = min(omega*2._rkind,omegamax)
+        call TotalCurrent(psi2,1._rkind,I)
+        Lambda = I0/I        
+     elseif (ratio.gt.0.1_rkind .and. ratio.le.0.3_rkind) then
+        k = k+1
+        psimaxcur = maxval(psig)
+        call dcopy(ntot,psi2,1,psig,1)
+        call TotalCurrent(psi2,1._rkind,I)
+        Lambda = I0/I        
+     elseif (ratio.gt.0.3_rkind .and. ratio.le.0.4_rkind) then
+        k = k+1
+        call dcopy(ntot,psi2,1,psig,1)
+        psimaxcur = maxval(psig)
+        omega = omega/2._rkind
+        call TotalCurrent(psi2,1._rkind,I)
+        Lambda = I0/I        
+     elseif (ratio.gt.0.4_rkind .and. ratio.le.0.6_rkind) then
+        k = k+1
+        call dcopy(ntot,psi2,1,psig,1)
+        psimaxcur = maxval(psig)
+        omega = omega/4._rkind
+        call TotalCurrent(psi2,1._rkind,I)
+        Lambda = I0/I        
+     elseif (ratio.gt.0.6_rkind) then
+        k = k+1
+        call dcopy(ntot,psi2,1,psig,1)
+        psimaxcur = maxval(psig)
+        omega = omega/16._rkind
+     end if
+  end do
+
+  LambdaSol = Lambda
+
+  print*, 'Lambda = ', LambdaSol
+  call TotalCurrent(psi2,Lambda,I)
+  print*, 'current = ', I
+
+end subroutine ADI_Solve_Current
 
 subroutine ADI_Solve(psig,psi2)
   ! Alternate direction implicit algorithm
@@ -60,7 +225,8 @@ subroutine ADI_Solve(psig,psi2)
   integer :: k
   real(rkind) :: I
   real(rkind) :: I0
-  real(rkind) :: lambda
+  real(rkind) :: Lambda, LambdaNew, dLambda
+  real(rkind) :: relax
   real(rkind) :: dtpsi
 
   real(rkind) :: N
@@ -68,7 +234,8 @@ subroutine ADI_Solve(psig,psi2)
   real(rkind) :: norm
   real(rkind) :: ratio
   real(rkind) :: dnrm2
-  real(rkind) :: psimaxcur
+
+  relax = 1._rkind
 
   ! Maximum time step
   omegamax = 1.e-1_rkind
@@ -77,25 +244,22 @@ subroutine ADI_Solve(psig,psi2)
 
   norm = dnrm2(ntot,psig,1)
 
-  if (guesstype.eq.1) then
-     lambda = lambdaini
-  else
-     lambda = pprime
-  end if
-  print*, 'lambdaini =', lambdaini
+  Lambda = Lambdaini
 
   k = 0
   dtpsi = tol
+  dLambda = tol
   
   print*, 'psitarget = ', psimax
+  psimaxcur = maxval(psig)
 
   ! Do at least 2 iterations
   do while ((k.lt.ntsmax .and. dtpsi.ge.tol) .or. (k.lt.2))
      ! Carrying out two half steps
-     call ADI_Step_omp(omega,lambda,psig,psi1)
-     call ADI_Step_omp(omega,lambda,psi1,psi2)
+     call ADI_Step_omp(omega,Lambda,psig,psi1)
+     call ADI_Step_omp(omega,Lambda,psi1,psi2)
      ! Carrying out one full step
-     call ADI_Step_omp(omega*2._rkind,lambda,psig,psi2_star)
+     call ADI_Step_omp(omega*2._rkind,Lambda,psig,psi2_star)
      
      ! Computing |psig - psi1| in N
      call dcopy(ntot,psig,1,aux,1)
@@ -113,7 +277,9 @@ subroutine ADI_Solve(psig,psi2)
      ! tracking convergence in terms of |dpsi/dt|
      dtpsi = N/(norm*omega)
 
-     write(*,'(I6,4E12.4)') k+1,omega,lambda,ratio,dtpsi/tol
+     if (mod(k+1,iplot).eq.0 .or. dtpsi.lt.tol) then
+        write(*,'(I6,5E12.4)') k+1,omega,Lambda,ratio,dtpsi/tol, dLambda/tol
+     end if
 
      if (ratio.le.0.05_rkind) then
         k=k+1
@@ -121,42 +287,52 @@ subroutine ADI_Solve(psig,psi2)
         ! updating time step
         omega = min(omega*4._rkind,omegamax)
         psimaxcur = maxval(psi2)
-        lambda = lambda/(psimaxcur/psimax)
+        LambdaNew = Lambda/(psimaxcur/psimax)
+        dLambda = LambdaNew - Lambda
+        Lambda = Lambda + dLambda*relax
      elseif (ratio.gt.0.05_rkind .and. ratio.le.0.1_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = min(omega*2._rkind,omegamax)
         psimaxcur = maxval(psi2)
-        lambda = lambda/(psimaxcur/psimax)
+        LambdaNew = Lambda/(psimaxcur/psimax)
+        dLambda = LambdaNew - Lambda
+        Lambda = Lambda + dLambda*relax
      elseif (ratio.gt.0.1_rkind .and. ratio.le.0.3_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         psimaxcur = maxval(psi2)
-        lambda = lambda/(psimaxcur/psimax)
+        LambdaNew = Lambda/(psimaxcur/psimax)
+        dLambda = LambdaNew - Lambda
+        Lambda = Lambda + dLambda*relax
      elseif (ratio.gt.0.3_rkind .and. ratio.le.0.4_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = omega/2._rkind
         psimaxcur = maxval(psi2)
-        lambda = lambda/(psimaxcur/psimax)
+        LambdaNew = Lambda/(psimaxcur/psimax)
+        dLambda = LambdaNew - Lambda
+        Lambda = Lambda + dLambda*relax
      elseif (ratio.gt.0.4_rkind .and. ratio.le.0.6_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = omega/4._rkind
         psimaxcur = maxval(psi2)
-        lambda = lambda/(psimaxcur/psimax)
+        LambdaNew = Lambda/(psimaxcur/psimax)
+        dLambda = LambdaNew - Lambda
+        Lambda = Lambda + dLambda*relax
      elseif (ratio.gt.0.6_rkind) then
         ! updating time step without changing the starting field
         omega = omega/16._rkind
      end if
   end do
 
-  lambdasol = lambda
+  Lambdasol = Lambda
 
-  print*, 'lambda = ', lambdasol
+  print*, 'Lambda = ', LambdaSol
 
 end subroutine ADI_Solve
 
@@ -232,16 +408,7 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
   ! !!!!!!!!!!!!!
 
   ! Current term, rhs of GS equation, R jphi = R**2 pprime
-  cur = 0._rkind
-
-  do iz=1,nztot
-     do ir=1,nrtot
-        psiv = psiold(iz,ir)
-        if (psiv.gt.0) then
-           cur(iz,ir) = -RR(iz,ir)**2*PP*ppfun(psiv)
-        end if
-     end do
-  end do
+  call CurrentTerm(PP,psiold,cur)
 
   ! ar is left of diagnoal of matrix
   ar = 0._rkind
@@ -281,16 +448,7 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
   ! !!!!!!!!!!!!!
 
   ! Current term
-  cur = 0._rkind
-
-  do iz=1,nztot
-     do ir=1,nrtot
-        psiv = psistar(iz,ir)
-        if (psiv.gt.0) then
-           cur(iz,ir) = -RR(iz,ir)**2*PP*ppfun(psiv)
-        end if
-     end do
-  end do
+  call CurrentTerm(PP,psistar,cur)
 
   ! az is left of diagnoal of matrix
   az = -omega*dz2
@@ -323,6 +481,29 @@ subroutine ADI_Step_omp(omega,PP,psiold,psinew)
   psinew(nz+2,:) = psiedge*R**2
 
 end subroutine ADI_Step_omp
+
+subroutine CurrentTerm(PP,psio,cur)
+  use globals
+  implicit none
+  real(rkind), intent(in) :: PP
+  real(rkind), dimension(nztot,nrtot), intent(in) :: psio
+  real(rkind), dimension(nztot,nrtot), intent(out) :: cur
+  real(rkind), external :: ppfun
+  real(rkind) :: psiv
+  integer :: iz,ir
+  
+  cur = 0._rkind
+
+  do iz=1,nztot
+     do ir=1,nrtot
+        psiv = psio(iz,ir)
+        if (psiv.gt.0) then
+           cur(iz,ir) = -RR(iz,ir)**2*PP*ppfun(psiv)
+        end if
+     end do
+  end do
+
+end subroutine CurrentTerm
 
 subroutine TDMA_Solver(a,b,c,d,x,n)
   ! Thomas TriDiagonal Matrix Algorithm
@@ -379,8 +560,6 @@ subroutine readnamelist
   ! Psi boundary condition (default corresponds to unit field)
   psiedge = -0.5_rkind
   
-  ! initial value for LagrangeMultiplier
-  pprime = 20._rkind
   ! maximum number of iterations
   ntsmax = 500
   ! tolerance for final convergence
@@ -394,9 +573,31 @@ subroutine readnamelist
   ! written with python or with fortran
   guesstype = 1
 
+  ! By default 0, in that case is not used
+  LambdaNL = 0._rkind
+
+  ! Polynomial defining pprime
+  AP_NL = 0._rkind
+  AP_NL(1) = 1._rkind
+
+  ! iplot for not printing everytime
+  iplot = 50
+
+  ! Control of the ADI solve through the current or through psimax
+  ControlCurrent = .false.
+
+  ! Current Target
+  CurrentTarget = -30._rkind
+
+  ! Number of points for psi,theta mesh (jacobian)
+  npsi = 50
+  ntheta = 64
+
   ! define namelist
   namelist /frc/ &
-       nr,nz,length,psiedge,pprime,ntsmax,tol,omegai,psimax,guesstype
+       &   nr,nz,length,psiedge,ntsmax,tol,omegai, &
+       &  psimax,guesstype,LambdaNL,AP_NL,iplot, &
+       &  ControlCurrent, CurrentTarget, npsi, ntheta
 
   ! read namelist
   mp = 101
@@ -457,11 +658,12 @@ subroutine read_guess
      read(mp) nzguesstot
      read(mp) nrguesstot
      read(mp) lguess
-     read(mp) lambdaini
+     read(mp) LambdaIni
 
      allocate(psiguess_read(nzguesstot,nrguesstot))
 
      read(mp) psiguess_read
+     read(mp) AP_guess
 
      close(mp)
 
@@ -509,6 +711,13 @@ subroutine read_guess
   end if
   
   deallocate(psiguess_read)
+
+  ! if LambdaNL (NL=namelist) is non zero, replace LambdaIni with LambdaNL
+  if (LambdaNL.gt.0_rkind) then
+     LambdaIni = LambdaNL
+  end if
+
+  hlength = 0.5_rkind*length
 
 end subroutine read_guess
 
@@ -575,6 +784,8 @@ subroutine save
   call matwrtM(mp,'psiguess',nztot,nrtot,psiguess)
   call matwrtM(mp,'psi',nztot,nrtot,psi)
 
+  call SaveMesh(mp,psi)
+
   close(mp)
   close(mp+1)
 
@@ -583,11 +794,32 @@ subroutine save
   write(mp) nztot
   write(mp) nrtot
   write(mp) length
-  write(mp) lambdasol
+  write(mp) LambdaSol
   write(mp) psi
+  write(mp) AP_NL
   close(mp)
 
 end subroutine save
+
+subroutine SaveMesh(mp,psim)
+  use globals
+  implicit none
+  integer :: mp
+  real(rkind), dimension(nztot,nrtot), intent(in) :: psim
+  real(rkind), dimension(npsi) :: SMesh,PsiMesh,PressureMesh
+  real(rkind), dimension(npsi,ntheta+1) :: ZMesh,RMesh,JacobMesh
+
+  call Mesh(LambdaSol,psim,npsi,ntheta,ZMesh,RMesh,JacobMesh,Smesh,PsiMesh,PressureMesh)
+  
+  call matwrtM(mp,'s',npsi,1,Smesh)
+  call matwrtM(mp,'PsiMesh',npsi,1,PsiMesh)
+  call matwrtM(mp,'Pressure',npsi,1,PressureMesh)
+  call matwrtM1(mp,'psimax',Psimesh(1))
+  call matwrtM(mp,'ZMesh',npsi,ntheta+1,ZMesh)
+  call matwrtM(mp,'RMesh',npsi,ntheta+1,RMesh)
+  call matwrtM(mp,'JacobMesh',npsi,ntheta+1,JacobMesh)
+
+end subroutine SaveMesh
 
 subroutine openbin(mp,filename,oformat,oaction,oconvert)
   !
@@ -656,6 +888,17 @@ subroutine matwrtM(mf,name,n,m,realvalue)
   !
   return
 end subroutine matwrtM
+
+subroutine DiffNorm(n,x,y,norm)
+  use prec_const
+  implicit none
+  integer, intent(in) :: n
+  real(rkind), dimension(n), intent(in) :: x,y
+  real(rkind), intent(out) :: norm
+
+  norm = norm2(y-x)/norm2(x)
+
+end subroutine DiffNorm
 
 ! subroutine ADI_Step_mpi(omega,PP,psiold,psinew)
 !   use globals

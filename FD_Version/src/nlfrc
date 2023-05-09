@@ -1,12 +1,18 @@
  &frc
- nr = 400,
- nz = 550,
+ nr = 500,
+ nz = 501,
  length = 10.,
  omegai = 1.e-6,
- pprime = 26.,
+ !LambdaNL = 41.,
  ntsmax = 10000,
  tol = 1.e-8,
  !psimax = 0.06370773166418076,
- psimax = 0.06,
+ psimax = 0.124,
  guesstype=1,
+ AP_NL = 1.,0.,0.,0.,0.,0.,0.,0.,0.,0.,
+ iplot = 50,
+ ControlCurrent = .t.,
+ CurrentTarget = -10.,
+ npsi = 300,
+ ntheta = 2048
 /

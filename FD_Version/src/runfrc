@@ -2,7 +2,7 @@
 #SBATCH --job-name=frc
 #SBATCH --time=36000
 #SBATCH --ntasks=1         # MPI tasks
-#SBATCH --cpus-per-task=6  # virtual cores
+#SBATCH --cpus-per-task=12  # virtual cores
 #SBATCH -o frc.%J.out
 #SBATCH -e frc.%J.err
 
