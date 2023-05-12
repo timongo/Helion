@@ -27,24 +27,16 @@ subroutine Run
 
   call DiffNorm(10,AP_NL,AP_guess,norm)
 
-  if (norm.lt.0.005_rkind) then
+  if (norm.lt.0.05_rkind) then
      AP = AP_NL
-     if (ControlCurrent) then
-        call ADI_Solve_Current(psiguess,psi)
-     else
-        call ADI_Solve(psiguess,psi)
-     end if
+     call ADI_Solve_Current(psiguess,psi)
   else
-     n = int(norm*200._rkind)+1
+     n = int(norm*20._rkind)+1
      write(*,'(A,I3,A)') 'Will try to reach the target in ',n,' steps'
      do i=1,n
         AP = AP_guess + dAP*real(i,rkind)/real(n,rkind)
         write(*,'(A,10E12.4)') 'Solving with AP=',AP
-        if (ControlCurrent) then
-           call ADI_Solve_Current(psiguess,psi)
-        else
-           call ADI_Solve(psiguess,psi)
-        end if
+        call ADI_Solve_Current(psiguess,psi)
         psiguess = psi
      end do
   end if
@@ -583,9 +575,6 @@ subroutine readnamelist
   ! iplot for not printing everytime
   iplot = 50
 
-  ! Control of the ADI solve through the current or through psimax
-  ControlCurrent = .false.
-
   ! Current Target
   CurrentTarget = -30._rkind
 
@@ -597,7 +586,7 @@ subroutine readnamelist
   namelist /frc/ &
        &   nr,nz,length,psiedge,ntsmax,tol,omegai, &
        &  psimax,guesstype,LambdaNL,AP_NL,iplot, &
-       &  ControlCurrent, CurrentTarget, npsi, ntheta
+       &  CurrentTarget, npsi, ntheta
 
   ! read namelist
   mp = 101

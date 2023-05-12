@@ -1,6 +1,6 @@
  &frc
- nr = 500,
- nz = 501,
+ nr = 100,
+ nz = 101,
  length = 10.,
  omegai = 1.e-6,
  !LambdaNL = 41.,
@@ -9,9 +9,8 @@
  !psimax = 0.06370773166418076,
  psimax = 0.124,
  guesstype=1,
- AP_NL = 1.,0.,0.,0.,0.,0.,0.,0.,0.,0.,
+ AP_NL = 1.,-0.4,-0.15,0.,0.,0.,0.,0.,0.,0.,
  iplot = 50,
- ControlCurrent = .t.,
  CurrentTarget = -10.,
  npsi = 300,
  ntheta = 2048

@@ -22,8 +22,6 @@ module globals
 
   integer :: iplot
 
-  logical :: ControlCurrent
-
   integer :: npsi,ntheta
 
   real(rkind) :: deltar,deltaz
