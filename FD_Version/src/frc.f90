@@ -191,6 +191,7 @@ subroutine ADI_Solve_Current(psig,psi2)
   print*, 'Lambda = ', LambdaSol
   call TotalCurrent(psi2,Lambda,I)
   print*, 'current = ', I
+  print*, 'psimax = ', maxval(psi2)
 
 end subroutine ADI_Solve_Current
 
