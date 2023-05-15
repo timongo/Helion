@@ -56,7 +56,6 @@ frc_bak.f90
 psielong.npz
 quadpack.f90
 quadpack_double
-quadpack_double.f90
 quadpack_double_test.f90
 quadpack_double_test.txt
 quadpack_test
