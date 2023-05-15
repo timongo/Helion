@@ -4,11 +4,12 @@ program main
   implicit none
 
   call readnamelist
-
+  ! loop start CurrentTarget = [-10.]
   call initialization
 
   call Run
-
+  !adjust CurrentTarget according to psimax
+  !loop ends 
   call save
 
   call deallocate_arrays
@@ -118,11 +119,11 @@ subroutine ADI_Solve_Current(psig,psi2)
 
   k = 0
   dtpsi = tol
-
+  
   print*, 'current = ', I0
   ! print*, 'psitarget = ', psimax
 
-  do while (k.lt.ntsmax .and. dtpsi.ge.tol)
+  do while (k.lt.ntsmax .and. dtpsi.ge.tol)   
      call ADI_Step_omp(omega,Lambda,psig,psi1)
      call ADI_Step_omp(omega,Lambda,psi1,psi2)
      call ADI_Step_omp(omega*2._rkind,Lambda,psig,psi2_star)
@@ -138,7 +139,7 @@ subroutine ADI_Solve_Current(psig,psi2)
      ratio = Nstar/N
 
      dtpsi = N/(norm*omega)
-
+     
      if (mod(k+1,iplot).eq.0 .or. dtpsi.lt.tol) then
         write(*,'(I6,5E12.4)') k+1,omega,Lambda,ratio,dtpsi/tol
      end if
@@ -247,15 +248,15 @@ subroutine ADI_Solve(psig,psi2)
 
   ! Do at least 2 iterations
   do while ((k.lt.ntsmax .and. dtpsi.ge.tol) .or. (k.lt.2))
-     ! Carrying out two half steps
+     ! Carrying out two steps of t = omega
      call ADI_Step_omp(omega,Lambda,psig,psi1)
      call ADI_Step_omp(omega,Lambda,psi1,psi2)
-     ! Carrying out one full step
+     ! Carrying out a double step of t = 2*omega
      call ADI_Step_omp(omega*2._rkind,Lambda,psig,psi2_star)
      
-     ! Computing |psig - psi1| in N
+     ! Computing |psig - psi2| in N
      call dcopy(ntot,psig,1,aux,1)
-     call daxpy(ntot,-1._rkind,psi1,1,aux,1)
+     call daxpy(ntot,-1._rkind,psi2,1,aux,1)
      N = dnrm2(ntot,aux,1)
 
      ! Computing |psi2 - psi2_star| in Nstar
@@ -759,12 +760,14 @@ subroutine save
   mp = 101
 
   call openbin(mp,'FRC.bin','unformatted','write','big_endian')
+  ! bin file has the data
   open(mp+1, file = 'FRC.dat', FORM = 'formatted', action = 'write')
+  ! dat file names and shapes of arrays
 
-  call matwrtI1(mp,'nz',nz)
+  call matwrtI1(mp,'nz',nz) ! I --> Integer
   call matwrtI1(mp,'nr',nr)
-  call matwrtM1(mp,'length',length)
-  call matwrtM1(mp,'psiedge',psiedge)
+  call matwrtM1(mp,'length',length) ! M --> Real
+  call matwrtM1(mp,'psiedge',psiedge) 
 
   call matwrtM(mp,'Z',nztot,1,Z)
   call matwrtM(mp,'R',nrtot,1,R)
@@ -782,10 +785,10 @@ subroutine save
   call openbin(mp,'solution_guess_write_FD.bin','unformatted','write','big_endian')
   write(mp) nztot
   write(mp) nrtot
-  write(mp) length
-  write(mp) LambdaSol
+  write(mp) length ! Z/R (R is 1 at the top)
+  write(mp) LambdaSol 
   write(mp) psi
-  write(mp) AP_NL
+  write(mp) AP_NL ! Polynomial of psi/psi_max
   close(mp)
 
 end subroutine save
