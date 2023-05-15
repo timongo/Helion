@@ -2,7 +2,7 @@ subroutine Save
   use globals
   implicit none
   integer :: mp
-  real(rkind) :: psimaxval
+  ! real(rkind) :: psimaxval
 
   mp = 101
 

@@ -288,7 +288,7 @@ end subroutine DeallocateArrays
 function ppfun(psiv)
   ! pprime function
   use prec_const
-  use globals, only : psimaxval
+  ! use globals, only : psimaxval
   implicit none
 
   real(rkind) :: x,psiv,ppfun
