@@ -3,6 +3,8 @@ subroutine Save
   implicit none
   integer :: mp
   ! real(rkind) :: psimaxval
+  real(rkind), dimension(inds_c%nz,inds_c%nr) :: psi2d_c
+  real(rkind), dimension(inds_r%nz,inds_r%nr) :: psi2d_r
 
   mp = 101
 
@@ -24,11 +26,15 @@ subroutine Save
   call matwrtM(mp,'R_c',inds_c%nr,1,inds_c%R)
   call matwrtM(mp,'RR_c',inds_c%nz,inds_c%nr,inds_c%RR)
   call matwrtM(mp,'ZZ_c',inds_c%nz,inds_c%nr,inds_c%ZZ)
+  call ReconstructPsi(inds_c,inds_c%PsiFinal,psi2d_c)
+  call matwrtM(mp,'psi2d_c',inds_c%nz,inds_c%nr,psi2d_c)  
 
   call matwrtM(mp,'Z',inds_r%nz,1,inds_r%Z)
   call matwrtM(mp,'R',inds_r%nr,1,inds_r%R)
   call matwrtM(mp,'RR',inds_r%nz,inds_r%nr,inds_r%RR)
   call matwrtM(mp,'ZZ',inds_r%nz,inds_r%nr,inds_r%ZZ)
+  call ReconstructPsi(inds_r,inds_r%PsiFinal,psi2d_r)
+  call matwrtM(mp,'psi2d',inds_c%nz,inds_c%nr,psi2d_r)
 
   ! call matwrtM(mp,'PsiCur',nws,1,PsiCur)
 
@@ -74,6 +80,33 @@ subroutine Save
   close(mp)
 
 end subroutine Save
+
+subroutine ReconstructPsi(inds,Psi,psi2d)
+  use prec_const
+  use sizes_indexing
+  implicit none
+  type(indices), intent(in) :: inds
+  real(rkind), dimension(inds%nkws), intent(in) :: Psi
+  real(rkind), dimension(inds%nz,inds%nr) :: psi2d
+  real(rkind), dimension(inds%ntot) :: PsiAll
+  integer :: iz,ir
+  real(rkind) :: zv,rv
+  real(rkind) :: psiv
+
+  psi2d = 0._rkind
+
+  call FillPsiAll(inds,Psi,PsiAll)
+  
+  do iz=1,inds%nz
+     zv = inds%Z(iz)
+     do ir=1,inds%nr
+        rv = inds%R(ir)
+        call EvalPsi(inds,PsiAll,zv,rv,psiv,1)
+        psi2d(iz,ir) = psiv
+     end do
+  end do
+
+end subroutine ReconstructPsi
 
 subroutine SaveMesh(mp,inds,Psi)
   use prec_const
