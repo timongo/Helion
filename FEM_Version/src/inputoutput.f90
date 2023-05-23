@@ -34,7 +34,7 @@ subroutine Save
   call matwrtM(mp,'RR',inds_r%nz,inds_r%nr,inds_r%RR)
   call matwrtM(mp,'ZZ',inds_r%nz,inds_r%nr,inds_r%ZZ)
   call ReconstructPsi(inds_r,inds_r%PsiFinal,psi2d_r)
-  call matwrtM(mp,'psi2d',inds_c%nz,inds_c%nr,psi2d_r)
+  call matwrtM(mp,'psi2d',inds_r%nz,inds_r%nr,psi2d_r)
 
   ! call matwrtM(mp,'PsiCur',nws,1,PsiCur)
 
