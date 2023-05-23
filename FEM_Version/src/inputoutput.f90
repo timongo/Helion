@@ -121,9 +121,9 @@ subroutine SaveMesh(mp,inds,Psi)
 
   call Mesh(inds,LambdaFinal,Psi,npsi,ntheta,ZMesh,RMesh,JacobMesh,Smesh,PsiMesh,PressureMesh)
   
-  call matwrtM(mp,'s',npsi,1,Smesh)
-  call matwrtM(mp,'psi',npsi,1,PsiMesh)
-  call matwrtM(mp,'pressure',npsi,1,PressureMesh)
+  call matwrtM(mp,'S',npsi,1,Smesh)
+  call matwrtM(mp,'PsiMesh',npsi,1,PsiMesh)
+  call matwrtM(mp,'Pressure',npsi,1,PressureMesh)
   call matwrtM1(mp,'psimax',Psimesh(1))
   call matwrtM(mp,'ZMesh',npsi,ntheta+1,ZMesh)
   call matwrtM(mp,'RMesh',npsi,ntheta+1,RMesh)
