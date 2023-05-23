@@ -801,7 +801,7 @@ subroutine SaveMesh(mp,psim)
 
   call Mesh(LambdaSol,psim,npsi,ntheta,ZMesh,RMesh,JacobMesh,Smesh,PsiMesh,PressureMesh)
   
-  call matwrtM(mp,'s',npsi,1,Smesh)
+  call matwrtM(mp,'S',npsi,1,Smesh)
   call matwrtM(mp,'PsiMesh',npsi,1,PsiMesh)
   call matwrtM(mp,'Pressure',npsi,1,PressureMesh)
   call matwrtM1(mp,'psimax',Psimesh(1))
