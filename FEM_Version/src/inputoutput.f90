@@ -20,10 +20,10 @@ subroutine Save
   call matwrtM1(mp,'length',inds_r%length)
   call matwrtM1(mp,'psiedge',psiedge)
 
-  call matwrtM(mp,'Z',inds_r%nz,1,inds_r%Z)
-  call matwrtM(mp,'R',inds_r%nr,1,inds_r%R)
-  call matwrtM(mp,'RR',inds_r%nz,inds_r%nr,inds_r%RR)
-  call matwrtM(mp,'ZZ',inds_r%nz,inds_r%nr,inds_r%ZZ)
+  call matwrtM(mp,'Z_c',inds_r%nz,1,inds_r%Z)
+  call matwrtM(mp,'R_c',inds_r%nr,1,inds_r%R)
+  call matwrtM(mp,'RR_c',inds_r%nz,inds_r%nr,inds_r%RR)
+  call matwrtM(mp,'ZZ_c',inds_r%nz,inds_r%nr,inds_r%ZZ)
 
   call matwrtM(mp,'Z',inds_c%nz,1,inds_c%Z)
   call matwrtM(mp,'R',inds_c%nr,1,inds_c%R)
