@@ -4,17 +4,43 @@ program main
   implicit none
 
   call readnamelist
-  ! loop start CurrentTarget = [-10.]
   call initialization
-
-  call Run
-  !adjust CurrentTarget according to psimax
-  !loop ends 
+  call psimax_loop
   call save
-
   call deallocate_arrays
 
 end program main
+
+subroutine psimax_loop
+  use globals
+  implicit none
+
+  real(rkind) :: psimaxerror, psi_max
+  integer :: iter, max_iter
+  real(rkind) :: step_factor
+
+  ! 'psimax', the target value, is read from nlfrc
+  iter = 0
+  max_iter = 50
+  step_factor = 0.5 ! multiplicative factor for step size adjustment
+
+  do while (iter < max_iter .and. abs(psi_max - psimax) >= tol)
+     iter = iter + 1
+     call Run
+
+     psi_max = maxval(psi)
+
+     ! Calculate the error in the maximum value of psi
+     psimaxerror = psi_max - psimax
+
+     ! Update CurrentTarget based on the error and step factor
+     CurrentTarget = CurrentTarget - (psimaxerror / psimax) * CurrentTarget * step_factor
+  end do
+
+  ! Display the total number of iterations
+  write(*, '(A, I0)') "Total iterations: ", iter
+  
+end subroutine psimax_loop
 
 subroutine Run
   use globals
@@ -629,6 +655,7 @@ subroutine initialization
   call read_guess
 
 end subroutine initialization
+
 
 subroutine read_guess
   ! read guess array
