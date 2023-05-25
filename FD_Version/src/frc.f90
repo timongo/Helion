@@ -18,7 +18,8 @@ subroutine psimax_loop
   real(rkind) :: psimaxerror, psi_max
   integer :: iter, max_iter
   real(rkind) :: step_factor
-
+  integer :: outfile
+  
   ! 'psimax', the target value, is read from nlfrc
   iter = 0
   max_iter = 50
@@ -39,7 +40,7 @@ subroutine psimax_loop
 
   ! Display the total number of iterations
   write(*, '(A, I0)') "Total iterations: ", iter
-  
+
 end subroutine psimax_loop
 
 subroutine Run
