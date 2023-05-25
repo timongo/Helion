@@ -13,8 +13,7 @@ end program main
 subroutine Run
   use globals
   implicit none
-  real(rkind), external :: ppfun
-  
+  real(rkind), external :: ppfun  
 
   if (usepetsc) then
      ! coarse grid solve
@@ -77,7 +76,7 @@ subroutine ReadNamelist
 
   ! Total current (when total current is used)
   Itotal = 2._rkind
-
+  
   ! Target value of psi on magnetic axis
   psimax = 0.05
   
@@ -93,23 +92,29 @@ subroutine ReadNamelist
   ! By default 0, in that case is not used
   LambdaNL = 0._rkind
 
+  ! Polynomial defining pprime
+  AP_NL = 0._rkind
+  AP_NL(1) = 1._rkind
+
   ! Use petsc, by default yes
   usepetsc = .true.
-
+  
+  ! define namelist
   namelist /frc/ &
        &    nzc,nrc,nz,nr,length,psiedge,ntsmax,psimax, &
        &    tol,gaussorder, nboundarypoints,relax,Itotal, &
        &    npsi,ntheta, &
        &    guesstype, usepetsc, &
-       &    LambdaNL
+       &    LambdaNL, AP_NL
 
+  ! read namelist
   mp = 101
   open(mp, file ='nlfrc', delim = 'apostrophe', &
        FORM = 'formatted', action = 'read', status='old')
   read(mp,frc)
   close(mp)
 
-  ! half length
+  half length
   hlength = 0.5_rkind*length
 
   inds_r%nz = nz
@@ -286,48 +291,64 @@ subroutine DeallocateArrays(inds)
 end subroutine DeallocateArrays
 
 function ppfun(psiv)
-  ! pprime function
+  ! Pprime function in Grad-Shafranov equation
   use prec_const
-  ! use globals, only : psimaxval
-  implicit none
-
-  real(rkind) :: x,psiv,ppfun
-  real(rkind), external :: seval
-
+  use globals, only : psimaxcur,AP
+  real(rkind) :: psiv,ppfun,x
   integer :: i
-  real(rkind) :: a1,b1,c1,d1
+  
+  x = psiv/psimaxcur
 
-  ! x = psiv/psimaxval
-
-  ! a1 = -0.1_rkind
-  ! b1 = -0.10_rkind
-  ! c1 = -0.1_rkind
-  ! d1 = 1._rkind
-
-  ! a1 = 0._rkind
-  ! b1 = -0.15_rkind
-  ! c1 = -0.4_rkind
-  ! d1 = 1._rkind
-
-  ! ppfun = a1*x**3 + b1*x**2 + c1*x + d1
-
-  ! ppfun = 1._rkind
-
-  ! a1 = 170.64_rkind
-  ! b1 = 0.69919_rkind
-  ! d1 = 3.0156_rkind
-
-  ! ppfun = 0._rkind
-  ! do i=1,npprime
-     ! ppfun = ppfun + Apprime(i)*psi**(i-1)
-  ! ppfun = d1/cosh(a1*psi-b1)**2
-  ! end do
-
-  ! ppfun = seval(npprime,psi,Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
-
-  ppfun = 1._rkind
+  ppfun = 0._rkind
+  do i=1,10
+     ppfun = ppfun + AP(i)*x**(i-1)
+  end do
 
 end function ppfun
+
+! function ppfun(psiv)
+!   ! pprime function
+!   use prec_const
+!   ! use globals, only : psimaxval
+!   implicit none
+
+!   real(rkind) :: x,psiv,ppfun
+!   real(rkind), external :: seval
+
+!   integer :: i
+!   real(rkind) :: a1,b1,c1,d1
+
+!   ! x = psiv/psimaxval
+
+!   ! a1 = -0.1_rkind
+!   ! b1 = -0.10_rkind
+!   ! c1 = -0.1_rkind
+!   ! d1 = 1._rkind
+
+!   ! a1 = 0._rkind
+!   ! b1 = -0.15_rkind
+!   ! c1 = -0.4_rkind
+!   ! d1 = 1._rkind
+
+!   ! ppfun = a1*x**3 + b1*x**2 + c1*x + d1
+
+!   ! ppfun = 1._rkind
+
+!   ! a1 = 170.64_rkind
+!   ! b1 = 0.69919_rkind
+!   ! d1 = 3.0156_rkind
+
+!   ! ppfun = 0._rkind
+!   ! do i=1,npprime
+!      ! ppfun = ppfun + Apprime(i)*psi**(i-1)
+!   ! ppfun = d1/cosh(a1*psi-b1)**2
+!   ! end do
+
+!   ! ppfun = seval(npprime,psi,Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
+
+!   ppfun = 1._rkind
+
+! end function ppfun
 
 subroutine PsiBoundaryCondition(inds)
   ! This sets the nkws values that are known due to the boundary conditions

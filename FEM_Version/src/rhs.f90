@@ -290,7 +290,7 @@ subroutine JphiPatch(psi,fun,z,r,jval)
 
   call EvalPsiPatch(psi,z,r,psival)
 
-  jval = fun(psi)
+  jval = fun(psival)
 
 end subroutine JphiPatch
 

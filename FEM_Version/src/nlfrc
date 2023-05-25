@@ -7,7 +7,8 @@
  usepetsc=.t.,
  length = 10.,
  psiedge = -0.5, ! must be negative
- psimax =  0.19845756888389587,
+ psimax =  0.125,
+ AP_NL = 1.,0.,0.,0.,0.,0.,0.,0.,0.,0.,
  ntsmax = 1000,
  tol = 4.e-4,
  gaussorder = 4,

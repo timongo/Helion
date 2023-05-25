@@ -209,6 +209,7 @@ subroutine FormFunction(snes,x,f,inds,ierr)
 
   call VecGetValues(x,pnws,ix,psi,ierr)
   call PsiMaximum(inds,psi,rmax,psimaxval,.true.)
+  psimaxcur = psimaxval
   call RightHandSide(inds,psi,ppfun,rhs)
 
   Lind(0) = pnws
