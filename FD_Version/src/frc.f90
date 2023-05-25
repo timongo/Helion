@@ -9,7 +9,7 @@ program main
   call save
   call deallocate_arrays
 
-end program main
+oend program main
 
 subroutine psimax_loop
   use globals
@@ -80,27 +80,10 @@ function ppfun(psiv)
   
   x = psiv/psimaxcur
 
-  ! a1 = -0.1_rkind
-  ! b1 = -0.2_rkind
-  ! c1 = .9_rkind
-  ! d1 = 0._rkind
-
   ppfun = 0._rkind
   do i=1,10
      ppfun = ppfun + AP(i)*x**(i-1)
   end do
-
-  ! a1 = 170.64_rkind
-  ! b1 = 0.69919_rkind
-  ! d1 = 3.0156_rkind
-
-  ! a1 = 33.943_rkind
-  ! b1 = 0.25867_rkind
-  ! d1 = 0.920_rkind
-
-  ! ppfun = pprime
-  ! ppfun = d1/cosh(a1*psiv-b1)**2
-  ! ppfun = 1._rkind
 
 end function ppfun
 
@@ -656,7 +639,6 @@ subroutine initialization
   call read_guess
 
 end subroutine initialization
-
 
 subroutine read_guess
   ! read guess array
