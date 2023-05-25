@@ -4,8 +4,9 @@ program main
   implicit none
 
   call readnamelist
-  call initialization
+  call initialization  
   call psimax_loop
+  ! call run
   call save
   call deallocate_arrays
 

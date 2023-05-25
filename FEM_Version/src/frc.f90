@@ -114,7 +114,7 @@ subroutine ReadNamelist
   read(mp,frc)
   close(mp)
 
-  half length
+  ! half length
   hlength = 0.5_rkind*length
 
   inds_r%nz = nz
