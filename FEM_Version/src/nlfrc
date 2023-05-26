@@ -3,7 +3,7 @@
  nrc = 102,
  nz = 103,
  nr = 102,
- guesstype=2, !1: FD,2: FE  
+ guesstype=2, ! 1: FD,2: FE  
  usepetsc=.t.,
  length = 10.,
  psiedge = -0.5, ! must be negative
