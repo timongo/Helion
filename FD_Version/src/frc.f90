@@ -6,11 +6,11 @@ program main
   call readnamelist
   call initialization  
   call psimax_loop
-  ! call run
+  ! call Run
   call save
   call deallocate_arrays
 
-oend program main
+end program main
 
 subroutine psimax_loop
   use globals
