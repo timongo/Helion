@@ -1,9 +1,9 @@
  &frc
- nzc = 103,
- nrc = 102,
+ nzc = 23,
+ nrc = 22,
  nz = 103,
  nr = 102,
- guesstype=2,
+ guesstype=2, !1-->FD, 2-->FEM
  usepetsc=.t.,
  length = 10.,
  psiedge = -0.5, ! must be negative
@@ -16,4 +16,5 @@
  Itotal = 2.747,
  npsi = 300,
  ntheta = 2048,
+ AP_NL = 1.0,-0.1,0.,0.,0.,0.,0.,0.,0.,0.,
 /

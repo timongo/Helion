@@ -75,5 +75,7 @@ module globals
 
   logical :: usepetsc
   
+  real(rkind), dimension(10) :: AP_NL
+  
 end module globals
 
