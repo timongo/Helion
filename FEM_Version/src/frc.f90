@@ -293,7 +293,7 @@ end subroutine DeallocateArrays
 function ppfun(psiv)
   ! Pprime function in Grad-Shafranov equation
   use prec_const
-  use globals, only : psimaxcur,AP
+  use globals, only : psimaxcur,AP_NL
   real(rkind) :: psiv,ppfun,x
   integer :: i
   
@@ -301,7 +301,7 @@ function ppfun(psiv)
 
   ppfun = 0._rkind
   do i=1,10
-     ppfun = ppfun + AP(i)*x**(i-1)
+     ppfun = ppfun + AP_NL(i)*x**(i-1)
   end do
 
 end function ppfun
@@ -597,14 +597,16 @@ subroutine Evolve(inds,PsiIni,fun,Psis,nts)
   i = 1
   dtpsi = tol
   Psis(:,i) = PsiIni
+  Psi1(:) = PsiIni(:)
+
+  call PsiMaximum(inds,PsiIni,rmax,psimaxcur,equatorial)
+  
   Lambdas(i) = Lambdaini
   ! Lambda is a Lagrange multiplier to respect the constraint of maximum psi
   Lambda = LambdaIni
   write(*,'(A,E12.4)'), 'Initial Lambda =', Lambda
   ! call TotalCurrent(PsiIni,fun,Itot)
   ! Itot = Itotal
-
-  Psi1(:) = PsiIni(:)
 
   write(*,'(A)'), ' Iteration      Lambda       dtpsi'
   ! Do at least 10 iterations

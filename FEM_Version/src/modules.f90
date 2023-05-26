@@ -48,7 +48,7 @@ module globals
   real(rkind) :: tol
   real(rkind) :: relax
   real(rkind) :: Itotal
-  real(rkind) :: psimax,psimaxval
+  real(rkind) :: psimax,psimaxval,psimaxcur
   real(rkind) :: Itot_target
 
   integer :: npsi

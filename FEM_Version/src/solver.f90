@@ -173,7 +173,7 @@ subroutine FormFunction(snes,x,f,inds,ierr)
   use petscsnes
   use prec_const
   use sizes_indexing
-  use globals, only : psimax,psimaxval,Itot_target
+  use globals, only : psimax,psimaxval,psimaxcur,Itot_target
   implicit none
 
   type(indices) :: inds
