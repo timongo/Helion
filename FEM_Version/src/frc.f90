@@ -100,6 +100,7 @@ subroutine ReadNamelist
   usepetsc = .true.
   
   ! define namelist
+
   namelist /frc/ &
        &    nzc,nrc,nz,nr,length,psiedge,ntsmax,psimax, &
        &    tol,gaussorder, nboundarypoints,relax,Itotal, &
@@ -293,11 +294,8 @@ end subroutine DeallocateArrays
 function ppfun(psiv)
   ! Pprime function in Grad-Shafranov equation
   use prec_const
-  use globals, only : psimaxcur,AP_NL
-  real(rkind) :: psiv,ppfun,x
-  integer :: i
-  
-  x = psiv/psimaxcur
+  use globals, only : AP_NL,psimaxval
+  implicit none
 
   ppfun = 0._rkind
   do i=1,10
@@ -306,11 +304,12 @@ function ppfun(psiv)
 
 end function ppfun
 
-! function ppfun(psiv)
-!   ! pprime function
-!   use prec_const
-!   ! use globals, only : psimaxval
-!   implicit none
+  x = psiv/psimaxval
+
+  ppfun = 0._rkind
+  do i=1,10
+     ppfun = ppfun + AP_NL(i)*x**(i-1)
+  end do
 
 !   real(rkind) :: x,psiv,ppfun
 !   real(rkind), external :: seval
@@ -334,9 +333,7 @@ end function ppfun
 
 !   ! ppfun = 1._rkind
 
-!   ! a1 = 170.64_rkind
-!   ! b1 = 0.69919_rkind
-!   ! d1 = 3.0156_rkind
+  ! ppfun = 1._rkind
 
 !   ! ppfun = 0._rkind
 !   ! do i=1,npprime
@@ -659,7 +656,7 @@ subroutine FEMStep(inds,Psi,fun,PsiSol)
   use prec_const
   use sizes_indexing
   use petscksp
-  use globals, only : relax
+  use globals, only : relax,psimaxval
   implicit none
   type(indices), intent(inout) :: inds
 
@@ -668,6 +665,7 @@ subroutine FEMStep(inds,Psi,fun,PsiSol)
   real(rkind), external :: fun
   integer :: ind
   real(rkind) :: norm2,norm2_
+  real(rkind) :: rmax
 
   Vec :: u,x,b
   PetscInt :: pnws
@@ -683,6 +681,7 @@ subroutine FEMStep(inds,Psi,fun,PsiSol)
   PC :: pc
   KSP :: ksp
 
+  call PsiMaximum(inds,Psi,rmax,psimaxval,.true.)
   ! Compute psi dependent part of the right hand side (integrals of R*pprime(psi) )
   call RightHandSide(inds,Psi,fun,inds%rhs)
 

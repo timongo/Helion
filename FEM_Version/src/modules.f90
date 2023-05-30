@@ -62,7 +62,6 @@ module globals
   real(rkind), allocatable, dimension(:,:) :: PsiGuess1
   real(rkind), dimension(16,16) :: Hmat
   real(rkind) :: LambdaIni,LambdaFinal,LambdaNL
-  real(rkind), dimension(10) :: AP_NL
 
   integer :: npprime
   real(rkind), allocatable, dimension(:) :: Apprime
@@ -75,6 +74,8 @@ module globals
   integer,save :: count=0
 
   logical :: usepetsc
+  
+  real(rkind), dimension(10) :: AP_NL
   
 end module globals
 
