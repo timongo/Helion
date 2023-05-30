@@ -1,20 +1,20 @@
  &frc
- nzc = 53, ! no. of grid points in z for the coarse grid
- nrc = 52, ! no. of grid points in r for the coarse grid
- nz = 103, ! no. of grid points in z for the refined grid
- nr = 102, ! no. of grid points in r for the refined grid
+ nzc = 53, 
+ nrc = 52, 
+ nz = 103, 
+ nr = 102, 
  guesstype=2, ! 1: from FD,2: from FE  
  usepetsc=.t., 
  length = 10., ! 
  psiedge = -0.5, ! must be negative
  psimax =  0.125, ! psi must be positive within the separatrix
  AP_NL = 1.,0.,0.,0.,0.,0.,0.,0.,0.,0., ! polynomial describing P'
- ntsmax = 1000, ! max no. of 
- tol = 4.e-4, ! tolerance
+ ntsmax = 1000,  
+ tol = 4.e-4,  
  gaussorder = 4, ! order for guassian quadratures
  nboundarypoints = 3, ! number of detected points for the plasma vaccum boundary in each square patch
  relax = .2, ! percentage updated in new solution
  Itotal = 2.747, ! total current
- npsi = 300, ! no. of psi points
- ntheta = 2048, ! no. of theta points
+ npsi = 300, 
+ ntheta = 2048, 
 /
