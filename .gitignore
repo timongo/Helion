@@ -45,8 +45,11 @@ frc
 *.bin
 *.dat
 
-# backup files
+# Backup files
 *~
+
+# Auto-save files
+*#
 
 # Other unwanted files
 #quad2d.f90#
