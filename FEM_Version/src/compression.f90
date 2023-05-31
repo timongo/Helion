@@ -2,42 +2,46 @@ program plasma_compression
   implicit none
   integer, parameter :: max_iter = 50
   real, parameter :: tol = 1.0e-4
-  real, dimension(:,:), allocatable :: psi, Pressure
+  real, dimension(:,:), allocatable :: psi, P
   real, dimension(:), allocatable :: Vprime
   real, dimension(:,:), allocatable :: JacobMesh
   integer :: iter
   real :: delta_psiedge
 
-  call Initialize()
-
-  ! delta_psiedge
-  delta_psiedge = -0.2
+  call Initialize
 
   ! Calculate initial psi
-  call calculate_psi(AP_NL, psimax, psiedge, psi)
+  call Run
+  ! call calculate_psi(AP_NL, psimax, psiedge, psi)
+  ! ! Calculate initial P and Vprime
+  ! call calculate_Pressure(AP_NL, psi, P)
+  ! ! Calculate initial Jacobian
+  ! call calculate_Jacobian(psi, JacobMesh)
 
-  ! Calculate initial P and Vprime
-  call calculate_Pressure(AP_NL, psi, Pressure)
-  call calculate_Jacobian(psi, JacobMesh)
+  ! Calculate initial Vprime
   call calculate_Vprime(JacobMesh, Vprime)
 
   ! Compute initial PV^(5/3)
-  P_oldV_old = Pressure * Vprime**(5.0/3.0)
-
+  P_oldV_old = P * Vprime**(5.0/3.0)
+  
+  ! delta_psiedge
+  delta_psiedge = -0.2
   ! Increase psiedge
   psiedge = psiedge + delta_psiedge
-
+  
   ! Calculate new psi
-  call calculate_psi(AP_NL, psimax, psiedge, psi)
-  ! Calculate new P and Vprime
-  call calculate_Pressure(AP_NL, psi, Pressure)
-  ! Calculate new Jacobian
-  call calculate_Jacobian(psi, JacobMesh)
+  call Run
+  ! call calculate_psi(AP_NL, psimax, psiedge, psi)
+  ! ! Calculate new P and Vprime
+  ! call calculate_Pressure(AP_NL, psi, P)
+  ! ! Calculate new Jacobian
+  ! call calculate_Jacobian(psi, JacobMesh)
+  
   ! Calculate new Vprime
   call calculate_Vprime(JacobMesh, Vprime)
 
   ! Compute new PV^(5/3)
-  PV = Pressure * Vprime**(5.0/3.0)
+  PV = P * Vprime**(5.0/3.0)
 
   ! Iterate until the relative error is below the tolerance
   iter = 0
@@ -48,9 +52,11 @@ program plasma_compression
      call calculate_AP_NL(Pressure, psi, AP_NL)
 
      ! Recompute psi based on the updated AP_NL
-     call calculate_psi(AP_NL, psimax, psiedge, psi)
-     ! Calculate the new Jacobian
-     call calculate_Jacobian(psi, JacobMesh)
+     call Run
+     ! call calculate_psi(AP_NL, psimax, psiedge, psi)
+     ! ! Calculate the new Jacobian
+     ! call calculate_Jacobian(psi, JacobMesh)
+     
      ! Calculate the new Vprime
      call calculate_Vprime(JacobMesh, Vprime)
 
@@ -69,99 +75,42 @@ program plasma_compression
      write(*, *) "Maximum iterations reached without convergence for psiedge =", psiedge
   else
      write(*, *) "Converged after ", iter, " iterations for psiedge =", psiedge
+     call Save
   end if
+  
+  call Finalize
 
 end program plasma_compression
 
-subroutine ReadNamelist
-  use prec_const
+subroutine Run
   use globals
   implicit none
+  real(rkind), external :: ppfun  
 
-  integer :: nzc,nrc
-  integer :: nz,nr
-  real(rkind) :: length,hlength
+  if (usepetsc) then
+     ! coarse grid solve
+     call PetscSolve(inds_c,LambdaFinal)
+     
+     ! Interpolation of coarse result on fine grid
+     inds_c%PsiCur = inds_c%PsiFinal
+     call InterpolatePsi2(inds_c,inds_r)
+     
+     ! Refined grid solve
+     LambdaIni = LambdaFinal
+     call PetscSolve(inds_r,LambdaFinal)
+  else
+     call Evolve(inds_c,inds_c%PsiCur,ppfun,inds_c%AllPsis,ntsmax)
+     inds_c%PsiFinal = inds_c%AllPsis(:,ilast)
 
-  integer :: mp
-
-  ! sizes for refined problem
-  nz = 101
-  nr = 100
-  ! sizes for coarse problem
-  nzc = 53
-  nrc = 32
-
-  length = 1._rkind
-  ! psi at the boundary in R=1
-  psiedge = -0.5_rkind
-
-  ! max number of iterations
-  ntsmax = 500
-  tol = 1.e-8_rkind
-
-  ! order for gaussian quadratures
-  gaussorder = 4
-  ! Number of detected points for the plasma vacuum boundary in each square patch 
-  nboundarypoints = 5
-
-  ! How much percentage is updated in new solution
-  relax = 0.1_rkind
-
-  ! Total current (when total current is used)
-  Itotal = 2._rkind
-
-  ! Target value of psi on magnetic axis
-  psimax = 0.05
-
-  ! Number of points for psi,theta mesh (jacobian)
-  npsi = 50
-  ntheta = 64
-
-  ! written with python or with fortran
-  ! guesstype = 1 --> solution from Finite Differences version
-  ! guesstype = 2 --> solution from the present Finite Element Version
-  guesstype = 1
-
-  ! By default 0, in that case is not used
-  LambdaNL = 0._rkind
-
-  ! Polynomial defining pprime
-  AP_NL = 0._rkind
-  AP_NL(1) = 1._rkind
-
-  ! Use petsc, by default yes
-  usepetsc = .true.
-
-  ! define namelist
-
-  namelist /frc/ &
-       &    nzc,nrc,nz,nr,length,psiedge,ntsmax,psimax, &
-       &    tol,gaussorder, nboundarypoints,relax,Itotal, &
-       &    npsi,ntheta, &
-       &    guesstype, usepetsc, &
-       &    LambdaNL, AP_NL
-
-  ! read namelist
-  mp = 101
-  open(mp, file ='nlfrc', delim = 'apostrophe', &
-       FORM = 'formatted', action = 'read', status='old')
-  read(mp,frc)
-  close(mp)
-
-  ! half length
-  hlength = 0.5_rkind*length
-
-  inds_r%nz = nz
-  inds_r%nr = nr
-  inds_r%length = length
-  inds_r%hlength = hlength
-
-  inds_c%nz = nzc
-  inds_c%nr = nrc
-  inds_c%length = length
-  inds_c%hlength = hlength
-
-end subroutine ReadNamelist
+     ! Interpolation of coarse result on fine grid
+     inds_c%PsiCur = inds_c%PsiFinal
+     call InterpolatePsi2(inds_c,inds_r)
+     
+     ! Refined grid solve
+     LambdaIni = LambdaFinal
+     call PetscSolve(inds_r,LambdaFinal)
+  end if
+end subroutine Run
 
 subroutine Initialize
 #include <petsc/finclude/petsc.h>
@@ -205,6 +154,12 @@ subroutine Initialize
   PETSC_COMM_WORLD = MPI_COMM_WORLD
   PETSC_COMM_SELF = MPI_COMM_SELF  
 
+  ! call cpu_time(t0)
+  ! call SETUPAB
+  ! call cpu_time(t1)
+
+  ! print*, (t1-t0)/24
+
   ! Read guess psi
   call ReadGuess
 
@@ -237,6 +192,96 @@ subroutine Initialize
   ilast = 1
 
 end subroutine Initialize
+
+subroutine ReadNamelist
+  use prec_const
+  use globals
+  implicit none
+  
+  integer :: nzc,nrc
+  integer :: nz,nr
+  real(rkind) :: length,hlength
+
+  integer :: mp
+
+  ! sizes for refined problem
+  nz = 101
+  nr = 100
+  ! sizes for coarse problem
+  nzc = 53
+  nrc = 32
+
+  length = 1._rkind
+  ! psi at the boundary in R=1
+  psiedge = -0.5_rkind
+  
+  ! max number of iterations
+  ntsmax = 500
+  tol = 1.e-8_rkind
+
+  ! order for gaussian quadratures
+  gaussorder = 4
+  ! Number of detected points for the plasma vacuum boundary in each square patch 
+  nboundarypoints = 5
+  
+  ! How much percentage is updated in new solution
+  relax = 0.1_rkind
+
+  ! Total current (when total current is used)
+  Itotal = 2._rkind
+  
+  ! Target value of psi on magnetic axis
+  psimax = 0.05
+  
+  ! Number of points for psi,theta mesh (jacobian)
+  npsi = 50
+  ntheta = 64
+
+  ! written with python or with fortran
+  ! guesstype = 1 --> solution from Finite Differences version
+  ! guesstype = 2 --> solution from the present Finite Element Version
+  guesstype = 1
+
+  ! By default 0, in that case is not used
+  LambdaNL = 0._rkind
+
+  ! Polynomial defining pprime
+  AP_NL = 0._rkind
+  AP_NL(1) = 1._rkind
+
+  ! Use petsc, by default yes
+  usepetsc = .true.
+  
+  ! define namelist
+
+  namelist /frc/ &
+       &    nzc,nrc,nz,nr,length,psiedge,ntsmax,psimax, &
+       &    tol,gaussorder, nboundarypoints,relax,Itotal, &
+       &    npsi,ntheta, &
+       &    guesstype, usepetsc, &
+       &    LambdaNL, AP_NL
+
+  ! read namelist
+  mp = 101
+  open(mp, file ='nlfrc', delim = 'apostrophe', &
+       FORM = 'formatted', action = 'read', status='old')
+  read(mp,frc)
+  close(mp)
+
+  ! half length
+  hlength = 0.5_rkind*length
+
+  inds_r%nz = nz
+  inds_r%nr = nr
+  inds_r%length = length
+  inds_r%hlength = hlength
+
+  inds_c%nz = nzc
+  inds_c%nr = nrc
+  inds_c%length = length
+  inds_c%hlength = hlength
+
+end subroutine ReadNamelist
 
 subroutine Arrays(inds)
   use sizes_indexing
@@ -310,7 +355,7 @@ subroutine DeallocateArrays(inds)
   type(indices), intent(inout) :: inds
   integer :: nz,nr
   integer :: i
-
+n
   deallocate(inds%Z,inds%R,inds%ZZ,inds%RR, &
        &     inds%logRp1sR,inds%PsiBC,inds%IndArray,inds%IndArrayInv, &
        &     inds%RIntegralArray,inds%ContributionMat, &
@@ -412,27 +457,6 @@ subroutine HermiteMatrix
   end do
 
 end subroutine HermiteMatrix
-
-subroutine Finalize
-#include <petsc/finclude/petsc.h>
-  use globals
-  use petsc
-  implicit none
-
-  PetscErrorCode :: ierr
-
-  call MatDestroy(inds_c%PAMat,ierr)
-  call MatDestroy(inds_r%PAMat,ierr)
-
-  call PetscFinalize(PETSC_NULL_CHARACTER,ierr)
-
-  call DeallocateArrays(inds_c)
-  call DeallocateArrays(inds_r)
-
-  ! deallocate(Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
-  ! deallocate(Apprime)
-
-end subroutine Finalize
 
 subroutine InterpolatePsi1(inds_g,inds)
   ! Transform a 2D psi array into an array adapted to the finite element
@@ -594,12 +618,12 @@ subroutine Evolve(inds,PsiIni,fun,Psis,nts)
   write(*,'(A)'), ' Iteration      Lambda       dtpsi'
   ! Do at least 10 iterations
   do while ((i.le.nts .and. dtpsi.ge.tol) .or. (i.le.10))
-     ! One step is to solve A psinew = rhs(psiold) and update psi2 = psiold + relax*(psinew-psiold)
+     ! One step is to solve A psinew = rhs(psiold) 
+     ! and update psi2 = psiold + relax*(psinew-psiold)
      call FEMStep(inds,Psi1,funLambda,Psi2)
      ! Compute norm difference between old and new solutions
      call DiffNorm(inds%nws,Psi1,Psi2,dtpsi)
      ! call TotalCurrent(Psi2,fun,Icur)
-     
      ! Compute Psimax
      call PsiMaximum(inds,Psi2,rmax,psimaxcur,equatorial)
      ! Lambda = Itot/Icur
@@ -758,7 +782,18 @@ subroutine calculate_Jacobian(psi, JacobMesh)
 end subroutine calculate_Jacobian
 
 subroutine calculate_Vprime(JacobMesh, Vprime)
-  ! Implementation of calculate_Vprime
+  use prec_const
+  use globals, only : npsi, ntheta
+  implicit none
+
+  real, dimension(:,:), intent(in) :: JacobMesh
+  real, dimension(:), intent(out) :: Vprime
+
+  integer :: i
+
+  do i = 1, npsi
+     Vprime(i) = sum(JacobMesh(i, 1:ntheta-1)) / real(ntheta-1)
+  end do
 end subroutine calculate_Vprime
 
 subroutine calculate_psi(AP_NL, psimax, psiedge, psi)
@@ -768,3 +803,24 @@ end subroutine calculate_psi
 subroutine calculate_AP_NL(Pressure, psi, AP_NL)
   ! Implementation of calculate_AP_NL
 end subroutine calculate_AP_NL
+
+subroutine Finalize
+#include <petsc/finclude/petsc.h>
+  use globals
+  use petsc
+  implicit none
+
+  PetscErrorCode :: ierr
+
+  call MatDestroy(inds_c%PAMat,ierr)
+  call MatDestroy(inds_r%PAMat,ierr)
+
+  call PetscFinalize(PETSC_NULL_CHARACTER,ierr)
+
+  call DeallocateArrays(inds_c)
+  call DeallocateArrays(inds_r)
+
+  ! deallocate(Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
+  ! deallocate(Apprime)
+
+end subroutine Finalize
