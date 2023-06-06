@@ -8,11 +8,11 @@
  length = 10., ! 
  psiedge = -0.6, ! must be negative
  psimax =  0.125, ! must be positive 
- AP_NL = 1.,-.5,0.,0.,0.,0.,0.,0.,0.,0., ! polynomial describing P'
+ AP_NL = 1.,-.5,0.,0.,0.,0.,0.,0.,0.,0., ! polynomial describing Pprime
  ntsmax = 1000,  
  tol = 4.e-4,  
  gaussorder = 4, ! order for guassian quadratures
- nboundarypoints = 3, ! number of detected points for the plasma vaccum boundary in each square patch
+ nboundarypoints = 3, ! number of detected points for the plasma - vaccum boundary in each square patch
  relax = .2, ! percentage updated in new solution
  Itotal = 2.747, ! total current
  npsi = 300, 

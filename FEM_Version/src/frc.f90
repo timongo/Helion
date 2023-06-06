@@ -291,17 +291,20 @@ subroutine DeallocateArrays(inds)
 
 end subroutine DeallocateArrays
 
-function ppfun(psiv)
+function ppfun(psiv) result(result_val)
   ! Pprime function in Grad-Shafranov equation
   use prec_const
   use globals, only : AP_NL,psimaxval
   implicit none
-  
+  real(rkind), intent(in) :: psiv
+  real(rkind) :: x, result_val
+  integer :: i
+
   x = psiv/psimaxval
 
-  ppfun = 0._rkind
+  result_val = 0._rkind
   do i=1,10
-     ppfun = ppfun + AP_NL(i)*x**(i-1)
+     result_val = result_val + AP_NL(i)*x**(i-1)
   end do
 
 end function ppfun
