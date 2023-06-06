@@ -15,7 +15,7 @@ subroutine Compress
   use sizes_indexing
   use globals
   implicit none
-  integer, parameter :: max_iter = 50
+  integer, parameter :: max_iter = 40
   real(rkind), parameter :: tol_comp = 1.0e-4
   real(rkind), dimension(npsi) :: S, psi, P, Vprime, P_oldV_old, PV
   real(rkind), dimension(npsi,ntheta+1) :: ZMesh,RMesh,JacobMesh
