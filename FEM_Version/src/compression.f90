@@ -10,15 +10,12 @@ program plasma_compression
 
   call Initialize
 
-  ! Calculate initial psi
+  ! Calculate initial psi, pressure, jacobian, Vpime  
   call Run
-  ! call calculate_psi(AP_NL, psimax, psiedge, psi)
-  ! ! Calculate initial P and Vprime
-  ! call calculate_Pressure(AP_NL, psi, P)
-  ! ! Calculate initial Jacobian
-  ! call calculate_Jacobian(psi, JacobMesh)
-
-  ! Calculate initial Vprime
+  call Mesh(inds,LambdaFinal,psi,npsi,ntheta,ZMesh,RMesh,JacobMesh,Smesh,PsiMesh,PressureMesh)
+  psi = PsiMesh
+  P = PressureMesh
+  J = JacobMesh
   call calculate_Vprime(JacobMesh, Vprime)
 
   ! Compute initial PV^(5/3)
@@ -29,16 +26,13 @@ program plasma_compression
   ! Increase psiedge
   psiedge = psiedge + delta_psiedge
   
-  ! Calculate new psi
+  ! Calculate new psi, pressure, jacobian, Vprime
   call Run
-  ! call calculate_psi(AP_NL, psimax, psiedge, psi)
-  ! ! Calculate new P and Vprime
-  ! call calculate_Pressure(AP_NL, psi, P)
-  ! ! Calculate new Jacobian
-  ! call calculate_Jacobian(psi, JacobMesh)
-  
-  ! Calculate new Vprime
-  call calculate_Vprime(JacobMesh, Vprime)
+  call Mesh(inds,LambdaFinal,psi,npsi,ntheta,ZMesh,RMesh,JacobMesh,Smesh,PsiMesh,PressureMesh)
+  psi = PsiMesh
+  P = PressureMesh
+  J = JacobMesh
+  call calculate_Vprime(J, Vprime)
 
   ! Compute new PV^(5/3)
   PV = P * Vprime**(5.0/3.0)
@@ -47,21 +41,20 @@ program plasma_compression
   iter = 0
   do while (norm( (PV - P_oldV_old) / P_oldV_old) > tol)
      ! Compute the new pressure based on P_oldV_old^(5/3)
-     Pressure = P_oldV_old / Vprime**(5.0/3.0)
+     P = P_oldV_old / Vprime**(5.0/3.0)
      ! Calculate new AP_NL and fit it
-     call calculate_AP_NL(Pressure, psi, AP_NL)
+     call calculate_AP_NL(P, psi, AP_NL)
 
-     ! Recompute psi based on the updated AP_NL
-     call Run
-     ! call calculate_psi(AP_NL, psimax, psiedge, psi)
-     ! ! Calculate the new Jacobian
-     ! call calculate_Jacobian(psi, JacobMesh)
-     
-     ! Calculate the new Vprime
+     ! Recompute based on the updated AP_NL
+     call Run 
+     call Mesh(inds,LambdaFinal,psi,npsi,ntheta,ZMesh,RMesh,JacobMesh,Smesh,PsiMesh,PressureMesh)
+     psi = PsiMesh
+     P = PressureMesh
+     J = JacobMesh
      call calculate_Vprime(JacobMesh, Vprime)
 
-     ! Update PV for the next iteration
-     PV = Pressure * Vprime**(5.0/3.0)
+     ! Update PV for the recomputed psi
+     PV = P * Vprime**(5.0/3.0)
 
      ! Check the number of iterations
      if (iter >= max_iter) then
@@ -773,14 +766,6 @@ subroutine DiffNorm(n,x,y,norm)
 
 end subroutine DiffNorm
 
-subroutine calculate_Pressure(AP_NL, psi, Pressure)
-  ! Implementation of calculate_Pressure
-end subroutine calculate_Pressure
-
-subroutine calculate_Jacobian(psi, JacobMesh)
-  ! Implementation of calculate_Jacobian
-end subroutine calculate_Jacobian
-
 subroutine calculate_Vprime(JacobMesh, Vprime)
   use prec_const
   use globals, only : npsi, ntheta
@@ -796,12 +781,10 @@ subroutine calculate_Vprime(JacobMesh, Vprime)
   end do
 end subroutine calculate_Vprime
 
-subroutine calculate_psi(AP_NL, psimax, psiedge, psi)
-  ! Implementation of calculate_psi
-end subroutine calculate_psi
-
 subroutine calculate_AP_NL(Pressure, psi, AP_NL)
-  ! Implementation of calculate_AP_NL
+  ! Calculate Pprime
+
+  ! Fit Pprime with a 9th order polynomial to get AP_NL
 end subroutine calculate_AP_NL
 
 subroutine Finalize
