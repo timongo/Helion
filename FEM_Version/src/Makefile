@@ -1,7 +1,7 @@
 FC=mpiifort
 FFLAGS=-O3 -fpp -xHost -qopenmp -parallel -mkl=parallel -mcmodel=medium -shared-intel
 SRCMOD=precconst.f90 modules.f90
-# SRC=frc.f90 indexing.f90 matrix.f90 quadpack_double.f90 integration.f90 gauss.f90 heavisideintegration.f90 rhs.f90 inputoutput.f90 mesh.f90 solver.f90 tseval.f90
+#SRC=frc.f90 indexing.f90 matrix.f90 quadpack_double.f90 integration.f90 gauss.f90 heavisideintegration.f90 rhs.f90 inputoutput.f90 mesh.f90 solver.f90 tseval.f90
 SRC=compression.f90 indexing.f90 matrix.f90 quadpack_double.f90 integration.f90 gauss.f90 heavisideintegration.f90 rhs.f90 inputoutput.f90 mesh.f90 polyfit.f90 solver.f90 tseval.f90 
 OBJMOD=${SRCMOD:.f90=.o}
 OBJ=${SRC:.f90=.o}
