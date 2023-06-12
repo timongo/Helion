@@ -1,8 +1,8 @@
  &frc
  nzc = 23, 
  nrc = 22, 
- nz = 103, 
- nr = 102, 
+ nz = 43, 
+ nr = 42, 
  guesstype=2, ! 1: from FD,2: from FE  
  usepetsc=.t., 
  length = 10., ! 

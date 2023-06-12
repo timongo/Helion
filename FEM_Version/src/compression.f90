@@ -1,10 +1,6 @@
 program main
 
-  call Initialize
-
   call Compress
-
-  call Save
 
   call Finalize
 
@@ -22,26 +18,34 @@ subroutine Compress
   real(rkind) :: delta_psiedge
   integer :: iter
 
+  write(*, *) 'Solving with psiedge = ', psiedge
+
   ! Calculate initial psi, pressure, jacobian, Vpime  
+  call Initialize
   call Run
   call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
   call calculate_Vprime(JacobMesh, Vprime)
+  call Save
 
   ! Compute initial PV^(5/3)
   P_oldV_old = P * Vprime**(5.0/3.0)
   
   ! delta_psiedge
-  delta_psiedge = -0.2
+  delta_psiedge = -0.2_rkind
   ! Increase psiedge
   psiedge = psiedge + delta_psiedge
   
-  ! Calculate new psi, pressure, jacobian, Vprime
+  write(*, *) 'Solving with psiedge = ', psiedge
+
+  ! Calculate new psi, pressure, jacobian, Vprime  
+  call Initialize_Local
+  print*, "Initialize_Local has run"
   call Run
   call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
   call calculate_Vprime(JacobMesh, Vprime)
 
   ! Compute new PV^(5/3)
-  PV = P * Vprime**(5.0/3.0)
+  PV = P * Vprime**(5._rkind/3._rkind)
 
   ! Iterate until the relative error is below the tolerance
   iter = 0
@@ -52,6 +56,7 @@ subroutine Compress
      call calculate_AP_NL(psi, P, AP_NL)
 
      ! Recompute based on the updated AP_NL
+     call Initialize_Local
      call Run 
      call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
      call calculate_Vprime(JacobMesh, Vprime)
@@ -71,6 +76,7 @@ subroutine Compress
      write(*, *) "Maximum iterations reached without convergence for psiedge =", psiedge
   else
      write(*, *) "Converged after ", iter, " iterations for psiedge =", psiedge
+     call Save
   end if
   
 end subroutine Compress
@@ -147,16 +153,10 @@ subroutine Initialize
   PETSC_COMM_WORLD = MPI_COMM_WORLD
   PETSC_COMM_SELF = MPI_COMM_SELF  
 
-  ! call cpu_time(t0)
-  ! call SETUPAB
-  ! call cpu_time(t1)
-
-  ! print*, (t1-t0)/24
-
   ! Read guess psi
   call ReadGuess
 
-  ! call ReadPprime
+  ! Read Pprime
 
   ! Interpolate the guess to obtain a guess with size nws containing also the field derivatives 
   if (guesstype.eq.1) then
@@ -185,6 +185,81 @@ subroutine Initialize
   ilast = 1
 
 end subroutine Initialize
+
+subroutine Initialize_Local
+  use globals
+  use petsc
+  implicit none
+  integer :: i
+  real(rkind) :: t0,t1
+  real(rkind), external  :: ppfun
+  real(rkind) :: Itot
+  real(rkind) :: rmax
+  real(rkind) :: lguess
+
+  ! This matrix transforms the set of psi and its derivatives and the four corners of a patch into the array aij such that psi = sum_(i,j) aij Z**i R**j (Z and R going from 0 to 1 on a patch) 
+  call HermiteMatrix
+  
+  ! Gives the answer to the question 'What is iR,iZ and field type if I know ind (from 1 to nws)?'
+  call Ind_to_iRiZ(inds_c)
+  call Ind_to_iRiZ(inds_r)
+
+  ! Gives the answer to the question 'What is ind (from 1 to nws) if I know iR,iZ and field type?'
+  call iRiZ_to_Ind(inds_c)
+  call iRiZ_to_Ind(inds_r)
+
+  ! Uses the Hermite matrix to compute all possible aij for all 16 base cases (4 locations on a patch times 4 field types)
+  call AllCoeffs(inds_c)
+  call AllCoeffs(inds_r)
+  
+  ! This sets the nkws values that are known due to the boundary conditions
+  call PsiBoundaryCondition(inds_c)
+  call PsiBoundaryCondition(inds_r)
+
+  ! Read guess psi
+  inds_g%nZ = inds_r%nz
+  inds_g%nR = inds_r%nr
+  lguess = inds_r%length
+  inds_g%length = lguess
+  inds_g%hlength = 0.5_rkind*lguess     
+  LambdaIni = LambdaFinal
+  inds_g%PsiCur = inds_r%PsiFinal
+  inds_g%deltaz = 1._rkind/real(inds_g%nZ-1,rkind)*lguess
+  inds_g%deltar = 1._rkind/real(inds_g%nR-1,rkind)
+  
+  call Arrays(inds_g)
+  call Ind_to_iRiZ(inds_g)
+  call iRiZ_to_Ind(inds_g)
+  call PsiBoundaryCondition(inds_g)
+
+  ! If LambdaNL (NL=namelist) is non zero, replace LambdaIni with LambdaNL
+  if (LambdaNL.gt.0_rkind) then
+     LambdaIni = LambdaNL
+  end if
+
+  ! Interpolate the guess to obtain a guess with size nws containing also the field derivatives 
+  call InterpolatePsi2(inds_g,inds_c)
+  call DeallocateArrays(inds_g)
+
+  call PsiMaximum(inds_c,inds_c%PsiCur,rmax,psimaxval,.true.)  
+
+  call TotalCurrent(inds_c,inds_c%PsiCur,ppfun,Itot_target)
+  Itot_target = Itot_target*LambdaIni
+
+  ! Computing beforehand all possible types of R**i/(R+a) integrals for matrix preparation
+  call AllRIntegrals(inds_c)
+  call AllRIntegrals(inds_r)
+
+  ! Computing all possible values for the matrix elements
+  call Aij_all(inds_c)
+  call Aij_all(inds_r)
+  ! Assembling the matrix as well as the boundary condition part of the right hand side
+  call SETUPAB(inds_c)
+  call SETUPAB(inds_r)
+
+  ilast = 1
+
+end subroutine Initialize_Local
 
 subroutine ReadNamelist
   use prec_const
@@ -773,13 +848,13 @@ subroutine calculate_Vprime(JacobMesh, Vprime)
   use globals, only : npsi, ntheta
   implicit none
 
-  real, dimension(:,:), intent(in) :: JacobMesh
-  real, dimension(:), intent(out) :: Vprime
+  real, dimension(npsi,ntheta+1), intent(in) :: JacobMesh
+  real, dimension(npsi), intent(out) :: Vprime
 
   integer :: i
 
   do i = 1, npsi
-     Vprime(i) = sum(JacobMesh(i, 1:ntheta-1)) / real(ntheta-1)
+     Vprime(i) = sum(JacobMesh(i, 1:ntheta)) / real(ntheta)
   end do
 end subroutine calculate_Vprime
 
