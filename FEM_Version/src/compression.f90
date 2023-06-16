@@ -117,7 +117,6 @@ subroutine Initialize
   use petsc
   implicit none
   integer :: i
-  real(rkind) :: t0,t1
   real(rkind), external  :: ppfun
   real(rkind) :: Itot
   real(rkind) :: rmax
@@ -188,10 +187,7 @@ end subroutine Initialize
 
 subroutine Initialize_Local
   use globals
-  use petsc
   implicit none
-  integer :: i
-  real(rkind) :: t0,t1
   real(rkind), external  :: ppfun
   real(rkind) :: Itot
   real(rkind) :: rmax
@@ -217,25 +213,7 @@ subroutine Initialize_Local
   call PsiBoundaryCondition(inds_r)
 
   ! Read guess psi
-  inds_g%nZ = inds_r%nz
-  inds_g%nR = inds_r%nr
-  lguess = inds_r%length
-  inds_g%length = lguess
-  inds_g%hlength = 0.5_rkind*lguess     
-  LambdaIni = LambdaFinal
-  inds_g%PsiCur = inds_r%PsiFinal
-  inds_g%deltaz = 1._rkind/real(inds_g%nZ-1,rkind)*lguess
-  inds_g%deltar = 1._rkind/real(inds_g%nR-1,rkind)
-  
-  call Arrays(inds_g)
-  call Ind_to_iRiZ(inds_g)
-  call iRiZ_to_Ind(inds_g)
-  call PsiBoundaryCondition(inds_g)
-
-  ! If LambdaNL (NL=namelist) is non zero, replace LambdaIni with LambdaNL
-  if (LambdaNL.gt.0_rkind) then
-     LambdaIni = LambdaNL
-  end if
+  call ReadGuess_Local
 
   ! Interpolate the guess to obtain a guess with size nws containing also the field derivatives 
   call InterpolatePsi2(inds_g,inds_c)

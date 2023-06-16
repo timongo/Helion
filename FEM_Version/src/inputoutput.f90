@@ -206,6 +206,34 @@ subroutine ReadGuess
 
 end subroutine ReadGuess
 
+subroutine ReadGuess_Local
+  use prec_const
+  use globals
+  implicit none
+  real(rkind) :: lguess
+  
+  inds_g%nZ = inds_r%nZ
+  inds_g%nR = inds_r%nR
+  lguess = inds_r%length
+  inds_g%length = lguess
+  inds_g%hlength = 0.5_rkind*lguess     
+  LambdaIni = LambdaFinal
+  inds_g%PsiCur = inds_r%PsiFinal
+  inds_g%deltaz = 1._rkind/real(inds_g%nZ-1,rkind)*lguess
+  inds_g%deltar = 1._rkind/real(inds_g%nR-1,rkind)
+
+  call Arrays(inds_g)
+  call Ind_to_iRiZ(inds_g)
+  call iRiZ_to_Ind(inds_g)
+  call PsiBoundaryCondition(inds_g)
+
+  ! if LambdaNL (NL=namelist) is non zero, replace LambdaIni with LambdaNL
+  if (LambdaNL.gt.0_rkind) then
+     LambdaIni = LambdaNL
+  end if
+
+end subroutine ReadGuess_Local
+
 subroutine ReadPprime
   use globals
   implicit none
