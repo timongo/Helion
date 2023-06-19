@@ -1,5 +1,7 @@
 program main
 
+  call Initialize
+
   call Compress
 
   call Finalize
@@ -20,18 +22,17 @@ subroutine Compress
 
   write(*, *) 'Solving with psiedge = ', psiedge
 
-  ! Calculate initial psi, pressure, jacobian, Vpime  
-  call Initialize
+  ! Calculate initial psi, pressure, jacobian, Vpime    
   call Run
   call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
   call calculate_Vprime(JacobMesh, Vprime)
-  call Save
+  call Save_Local
 
   ! Compute initial PV^(5/3)
   P_oldV_old = P * Vprime**(5.0/3.0)
   
   ! delta_psiedge
-  delta_psiedge = -0.2_rkind
+  delta_psiedge = -0.1_rkind
   ! Increase psiedge
   psiedge = psiedge + delta_psiedge
   
@@ -44,40 +45,43 @@ subroutine Compress
   call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
   call calculate_Vprime(JacobMesh, Vprime)
 
+  !Save new data for python
+  call Save_Local
+
   ! Compute new PV^(5/3)
   PV = P * Vprime**(5._rkind/3._rkind)
 
-  ! Iterate until the relative error is below the tolerance
-  iter = 0
-  do while (norm2( (PV - P_oldV_old) / P_oldV_old) > tol_comp)
-     ! Compute the new pressure based on P_oldV_old^(5/3)
-     P = P_oldV_old / Vprime**(5.0/3.0)
-     ! Calculate new AP_NL and fit it
-     call calculate_AP_NL(psi, P, AP_NL)
+  ! ! Iterate until the relative error is below the tolerance
+  ! iter = 0
+  ! do while (norm2( (PV - P_oldV_old) / P_oldV_old) > tol_comp)
+  !    ! Compute the new pressure based on P_oldV_old^(5/3)
+  !    P = P_oldV_old / Vprime**(5.0/3.0)
+  !    ! Calculate new AP_NL and fit it
+  !    call calculate_AP_NL(psi, P, AP_NL)
 
-     ! Recompute based on the updated AP_NL
-     call Initialize_Local
-     call Run 
-     call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
-     call calculate_Vprime(JacobMesh, Vprime)
+  !    ! Recompute based on the updated AP_NL
+  !    call Initialize_Local
+  !    call Run 
+  !    call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
+  !    call calculate_Vprime(JacobMesh, Vprime)
 
-     ! Update PV for the recomputed psi
-     PV = P * Vprime**(5.0/3.0)
+  !    ! Update PV for the recomputed psi
+  !    PV = P * Vprime**(5.0/3.0)
 
-     ! Check the number of iterations
-     if (iter >= max_iter) then
-        exit
-     end if
+  !    ! Check the number of iterations
+  !    if (iter >= max_iter) then
+  !       exit
+  !    end if
 
-     iter = iter + 1
-  end do
+  !    iter = iter + 1
+  ! end do
 
-  if (iter >= max_iter) then
-     write(*, *) "Maximum iterations reached without convergence for psiedge =", psiedge
-  else
-     write(*, *) "Converged after ", iter, " iterations for psiedge =", psiedge
-     call Save
-  end if
+  ! if (iter >= max_iter) then
+  !    write(*, *) "Maximum iterations reached without convergence for psiedge =", psiedge
+  ! else
+  !    write(*, *) "Converged after ", iter, " iterations for psiedge =", psiedge
+  !    call Save_Local
+  ! end if
   
 end subroutine Compress
 
@@ -826,13 +830,13 @@ subroutine calculate_Vprime(JacobMesh, Vprime)
   use globals, only : npsi, ntheta
   implicit none
 
-  real, dimension(npsi,ntheta+1), intent(in) :: JacobMesh
-  real, dimension(npsi), intent(out) :: Vprime
+  real(rkind), dimension(npsi,ntheta+1), intent(in) :: JacobMesh
+  real(rkind), dimension(npsi), intent(out) :: Vprime
 
   integer :: i
 
   do i = 1, npsi
-     Vprime(i) = sum(JacobMesh(i, 1:ntheta)) / real(ntheta)
+     Vprime(i) = sum(JacobMesh(i, 1:ntheta)) / real(ntheta,rkind)
   end do
 end subroutine calculate_Vprime
 
@@ -841,15 +845,15 @@ subroutine calculate_AP_NL(psi, P, AP_NL)
   implicit none
   
   ! Input parameters
-  real(kind=8), dimension(npsi), intent(in) :: psi
-  real(kind=8), dimension(npsi), intent(in) :: P
+  real(rkind), dimension(npsi), intent(in) :: psi
+  real(rkind), dimension(npsi), intent(in) :: P
   
   ! Output parameter
-  real(kind=8), dimension(10), intent(out) :: AP_NL
+  real(rkind), dimension(10), intent(out) :: AP_NL
   
   ! Local variables
-  real(kind=8), dimension(npsi) :: Pprime
-  real(kind=8), dimension(0:9) :: poly_coeffs
+  real(rkind), dimension(npsi) :: Pprime
+  real(rkind), dimension(0:9) :: poly_coeffs
   integer :: i, j
   
   ! Calculate derivative of P with respect to psi
@@ -862,7 +866,7 @@ subroutine calculate_AP_NL(psi, P, AP_NL)
   Pprime(npsi) = (P(npsi) - P(npsi-1)) / (psi(npsi) - psi(npsi-1))
   
   ! Fit Pprime to a 9th degree polynomial using polyfit
-  call polyfit(psi, Pprime, 9, AP_NL)
+  call polyfit(psi, Pprime, 9, poly_coeffs)
   
   ! Store polynomial coefficients as AP_NL
   do j = 0, 9
