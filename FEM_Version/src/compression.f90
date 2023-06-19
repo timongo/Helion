@@ -827,6 +827,7 @@ subroutine DiffNorm(n,x,y,norm)
 end subroutine DiffNorm
 
 subroutine calculate_Vprime(JacobMesh, Vprime)
+  use prec_const
   use globals, only : npsi, ntheta
   implicit none
 
@@ -841,6 +842,7 @@ subroutine calculate_Vprime(JacobMesh, Vprime)
 end subroutine calculate_Vprime
 
 subroutine calculate_AP_NL(psi, P, AP_NL)
+  use prec_const
   use globals, only : npsi
   implicit none
   
