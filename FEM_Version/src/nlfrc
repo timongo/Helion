@@ -8,8 +8,7 @@
  length = 10., ! 
  psiedge = -0.7, ! must be negative
  psimax =  0.125, ! must be positive 
- ! AP_NL = 1.,0.,0.,0.,0.,0.,0.,0.,0.,0., ! polynomial describing Pprime
- AP_NL = 3.80506974e+01, -1.95431688e+03, 3.97538353e+05, -3.29395351e+07, 1.41179868e+09, -3.45675380e+10, 5.01195485e+11, -4.24841422e+12, 1.94279968e+13, -3.69818594e+13
+ AP_NL = 0.,0.5,-1.,0.5,0.,0.,0.,0.,0.,0., ! polynomial describing Pprime
  ntsmax = 1000,  
  tol = 4.e-4,  
  gaussorder = 4, ! order for guassian quadratures

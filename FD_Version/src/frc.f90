@@ -5,8 +5,8 @@ program main
 
   call readnamelist
   call initialization  
-  call psimax_loop
-  ! call Run
+  !call psimax_loop
+  call run
   call save
   call deallocate_arrays
 
@@ -44,7 +44,7 @@ subroutine psimax_loop
 
 end subroutine psimax_loop
 
-subroutine Run
+subroutine run
   use globals
   implicit none
   
@@ -70,20 +70,26 @@ subroutine Run
      end do
   end if
 
-end subroutine Run
+end subroutine run
 
-function ppfun(psiv)
+function ppfun(psiv) result(result_val)
   ! Pprime function in Grad-Shafranov equation
   use prec_const
-  use globals, only : psimaxcur,AP
-  real(rkind) :: psiv,ppfun,x
+  use globals, only : AP, psimax
+  implicit none
+  real(rkind), intent(in) :: psiv
+  real(rkind) :: s, result_val
   integer :: i
   
-  x = psiv/psimaxcur
-
-  ppfun = 0._rkind
+  if (psiv <= psimax) then
+     s = sqrt(1 - psiv/psimax)
+  else
+     s = 0
+  end if
+  
+  result_val = 0._rkind
   do i=1,10
-     ppfun = ppfun + AP(i)*x**(i-1)
+     result_val = result_val + AP(i)*s**(i-1)
   end do
 
 end function ppfun
