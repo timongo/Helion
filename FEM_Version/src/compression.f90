@@ -22,7 +22,7 @@ subroutine Compress
 
   write(*, *) 'Solving with psiedge = ', psiedge
 
-  ! Calculate initial psi, pressure, jacobian, Vpime    
+  ! Calculate initial psi, pressure, jacobian, Vprime    
   call Run
   call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
   call calculate_Vprime(JacobMesh, Vprime)
@@ -30,7 +30,8 @@ subroutine Compress
 
   ! Compute initial PV^(5/3)
   P_oldV_old = P * Vprime**(5.0/3.0)
-  
+  P_oldV_old(npsi) = 0
+ 
   ! delta_psiedge
   delta_psiedge = -0.1_rkind
   ! Increase psiedge
@@ -50,12 +51,14 @@ subroutine Compress
 
   ! Compute new PV^(5/3)
   PV = P * Vprime**(5._rkind/3._rkind)
+  PV(npsi) = 0
 
   ! ! Iterate until the relative error is below the tolerance
   ! iter = 0
-  ! do while (norm2( (PV - P_oldV_old) / P_oldV_old) > tol_comp)
+  ! do while (norm2(PV - P_oldV_old) / norm2(P_oldV_old) > tol_comp)
   !    ! Compute the new pressure based on P_oldV_old^(5/3)
   !    P = P_oldV_old / Vprime**(5.0/3.0)
+  !    P(npsi) = 0
   !    ! Calculate new AP_NL and fit it
   !    call calculate_AP_NL(psi, P, AP_NL)
 
@@ -67,7 +70,7 @@ subroutine Compress
 
   !    ! Update PV for the recomputed psi
   !    PV = P * Vprime**(5.0/3.0)
-
+  !    PV(npsi) = 0
   !    ! Check the number of iterations
   !    if (iter >= max_iter) then
   !       exit

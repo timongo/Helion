@@ -53,7 +53,6 @@ subroutine Save
   !    call SaveMesh(mp,inds_c,inds_c%PsiFinal)
   ! end if
   
-
   close(mp)
   close(mp+1)
 
@@ -92,9 +91,9 @@ subroutine Save_Local
 
   mp = 101
 
-  write(filename, '(A,F4.2,A)') 'FRC_', abs(psiedge), '.bin'
+  write(filename, '(A,F4.2,A)') './Data/FRC_', abs(psiedge), '.bin'
   call openbin(mp,filename,'unformatted','write','big_endian')
-  write(filename, '(A,F4.2,A)') 'FRC_', abs(psiedge), '.dat'
+  write(filename, '(A,F4.2,A)') './Data/FRC_', abs(psiedge), '.dat'
   open(mp+1, file = filename, FORM = 'formatted', action = 'write')
 
   call matwrtI1(mp,'nz',inds_r%nZ)
@@ -126,6 +125,14 @@ subroutine Save_Local
   call matwrtM(mp,'PsiSol_c',inds_c%nws,1,inds_c%PsiFinal)
   call matwrtM(mp,'PsiSol',inds_r%nws,1,inds_r%PsiFinal)
   call SaveMesh(mp,inds_r,inds_r%PsiFinal)
+
+  ! call matwrtM(mp,'S',npsi,1,S)
+  ! call matwrtM(mp,'PsiMesh',npsi,1,psi)
+  ! call matwrtM(mp,'Pressure',npsi,1,P)
+  ! call matwrtM1(mp,'psimax',psi(1))
+  ! call matwrtM(mp,'ZMesh',npsi,ntheta+1,ZMesh)
+  ! call matwrtM(mp,'RMesh',npsi,ntheta+1,RMesh)
+  ! call matwrtM(mp,'JacobMesh',npsi,ntheta+1,JacobMesh)
 
   close(mp)
   close(mp+1)
@@ -170,9 +177,9 @@ subroutine SaveMesh(mp,inds,Psi)
   real(rkind), dimension(npsi) :: SMesh,PsiMesh,PressureMesh
   real(rkind), dimension(npsi,ntheta+1) :: ZMesh,RMesh,JacobMesh
 
-  call Mesh(inds,LambdaFinal,Psi,npsi,ntheta,ZMesh,RMesh,JacobMesh,Smesh,PsiMesh,PressureMesh)
+  call Mesh(inds,LambdaFinal,Psi,npsi,ntheta,ZMesh,RMesh,JacobMesh,SMesh,PsiMesh,PressureMesh)
   
-  call matwrtM(mp,'S',npsi,1,Smesh)
+  call matwrtM(mp,'S',npsi,1,SMesh)
   call matwrtM(mp,'PsiMesh',npsi,1,PsiMesh)
   call matwrtM(mp,'Pressure',npsi,1,PressureMesh)
   call matwrtM1(mp,'psimax',Psimesh(1))

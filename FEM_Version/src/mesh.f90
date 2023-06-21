@@ -104,7 +104,7 @@ contains
 
 end subroutine PsiMaximum
 
-subroutine Mesh(inds,Lambda,Psi,np,nth,Zmesh,RMesh,JacMesh,Smesh,PsiMesh,PressureMesh)
+subroutine Mesh(inds,Lambda,Psi,np,nth,Zmesh,RMesh,JacMesh,SMesh,PsiMesh,PressureMesh)
   use prec_const
   use sizes_indexing
   use globals, only : theta1,theta2,theta3,theta4
