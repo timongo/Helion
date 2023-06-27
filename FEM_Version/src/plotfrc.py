@@ -16,7 +16,7 @@ Vprime = np.mean(J[:,:-1],axis=1)
 plt.figure(2)
 plt.clf()
 px.Plot(S,P*Vprime**(5/3),lw=2)
-plt.xlabel('$S$'); plt.ylabel('$PV\'^{5/3}$')
+plt.xlabel('$s$'); plt.ylabel('$PV\'^{5/3}$')
 
 ZM = rx.RawReadField('FRC', 'ZMesh')
 RM = rx.RawReadField('FRC', 'RMesh')

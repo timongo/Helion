@@ -38,14 +38,14 @@ module globals
   ! container for indices of the guess
   type(indices) :: inds_g
   
-  real(rkind) :: psiedge
+  real(rkind) :: psiedge, delta_psiedge
   real(rkind) :: current
   integer :: gaussorder
   integer :: nboundarypoints
 
-  integer :: ntsmax
+  integer :: ntsmax, max_iter
   integer :: ilast
-  real(rkind) :: tol
+  real(rkind) :: tol, tol_comp
   real(rkind) :: relax
   real(rkind) :: Itotal
   real(rkind) :: psimax,psimaxval,psimaxcur

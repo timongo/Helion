@@ -5,93 +5,101 @@ program main
 
   call readnamelist
   call initialization  
-  !call psimax_loop
   call run
+  ! call run_psimax
   call save
   call deallocate_arrays
 
 end program main
 
-subroutine psimax_loop
+subroutine run_psimax
   use globals
   implicit none
 
-  real(rkind) :: psimaxerror, psi_max
+  real(rkind) :: psimaxerror
   integer :: iter, max_iter
   real(rkind) :: step_factor
-  integer :: outfile
-  
   ! 'psimax', the target value, is read from nlfrc
+  
+  AP = AP_NL
+  step_factor = 0.8 ! multiplicative factor for step size adjustment
+  
   iter = 0
   max_iter = 50
-  step_factor = 0.5 ! multiplicative factor for step size adjustment
+  psimaxerror = 2*tol
+  do while (iter < max_iter .and. abs(psimaxerror) >= tol)
+     call ADI_Solve_Current(psiguess,psi)
+     ! Update psiguess
+     psiguess = psi
 
-  do while (iter < max_iter .and. abs(psi_max - psimax) >= tol)
-     iter = iter + 1
-     call Run
-
-     psi_max = maxval(psi)
-
-     ! Calculate the error in the maximum value of psi
-     psimaxerror = psi_max - psimax
+     ! Calculate the error in the maximum value of psi wrt target psimax
+     psimaxerror = maxval(psi) - psimax
 
      ! Update CurrentTarget based on the error and step factor
      CurrentTarget = CurrentTarget - (psimaxerror / psimax) * CurrentTarget * step_factor
+     
+     iter = iter + 1
   end do
 
-  ! Display the total number of iterations
-  write(*, '(A, I0)') "Total iterations: ", iter
-
-end subroutine psimax_loop
+  if (iter >= max_iter) then
+     print*, 'Maximum iterations reached without convergence for target psimax = ', psimax
+  else
+     print*, 'Converged after ', iter, ' iterations for target psimax = ', psimax
+  end if
+  
+end subroutine run_psimax
 
 subroutine run
   use globals
   implicit none
   
-  real(rkind), dimension(10) :: dAP
-  real(rkind) :: norm
-  integer :: i,n
+  AP = AP_NL
+  ! call ADI_Solve_Current(psiguess,psi)
+  call ADI_Solve(psiguess,psi)
 
-  dAP = AP_NL - AP_guess
+  ! real(rkind), dimension(10) :: dAP
+  ! real(rkind) :: norm
+  ! integer :: i,n
+  
+  ! dAP = AP_NL - AP_guess
 
-  call DiffNorm(10,AP_NL,AP_guess,norm)
+  ! call DiffNorm(10,AP_NL,AP_guess,norm)
 
-  if (norm.lt.0.05_rkind) then
-     AP = AP_NL
-     call ADI_Solve_Current(psiguess,psi)
-  else
-     n = int(norm*20._rkind)+1
-     write(*,'(A,I3,A)') 'Will try to reach the target in ',n,' steps'
-     do i=1,n
-        AP = AP_guess + dAP*real(i,rkind)/real(n,rkind)
-        write(*,'(A,10E12.4)') 'Solving with AP=',AP
-        call ADI_Solve_Current(psiguess,psi)
-        psiguess = psi
-     end do
-  end if
-
+  ! if (norm.lt.0.05_rkind) then
+  !    AP = AP_NL
+  !    call ADI_Solve_Current(psiguess,psi)
+  ! else
+  !    n = int(norm*20._rkind)+1
+  !    write(*,'(A,I3,A)') 'Will try to reach the target in ',n,' steps'
+  !    do i=1,n
+  !       AP = AP_guess + dAP*real(i,rkind)/real(n,rkind)
+  !       write(*,'(A,10E12.4)') 'Solving with AP=',AP
+  !       call ADI_Solve_Current(psiguess,psi)
+  !       psiguess = psi
+  !    end do
+  ! end if
+  
 end subroutine run
 
 function ppfun(psiv) result(result_val)
   ! Pprime function in Grad-Shafranov equation
   use prec_const
-  use globals, only : AP, psimax
+  use globals, only : AP, psimax, pp_p
   implicit none
   real(rkind), intent(in) :: psiv
   real(rkind) :: s, result_val
   integer :: i
   
-  if (psiv <= psimax) then
-     s = sqrt(1 - psiv/psimax)
-  else
-     s = 0
-  end if
-  
   result_val = 0._rkind
-  do i=1,10
-     result_val = result_val + AP(i)*s**(i-1)
-  end do
 
+  if (0 <= psiv .and. psiv < psimax) then 
+     s = 1 - psiv/psimax
+     do i=1,10
+        result_val = result_val + AP(i)*s**(i-1)
+     end do  
+  end if
+
+  ! result_val = 2.*pp_p(1)* tanh(pp_p(1)*psiv+pp_p(2)) / cosh(pp_p(1)*psiv+pp_p(2))**2
 end function ppfun
 
 subroutine ADI_Solve_Current(psig,psi2)
@@ -137,9 +145,6 @@ subroutine ADI_Solve_Current(psig,psi2)
   k = 0
   dtpsi = tol
   
-  print*, 'current = ', I0
-  ! print*, 'psitarget = ', psimax
-
   do while (k.lt.ntsmax .and. dtpsi.ge.tol)   
      call ADI_Step_omp(omega,Lambda,psig,psi1)
      call ADI_Step_omp(omega,Lambda,psi1,psi2)
@@ -157,9 +162,9 @@ subroutine ADI_Solve_Current(psig,psi2)
 
      dtpsi = N/(norm*omega)
      
-     if (mod(k+1,iplot).eq.0 .or. dtpsi.lt.tol) then
-        write(*,'(I6,5E12.4)') k+1,omega,Lambda,ratio,dtpsi/tol
-     end if
+     ! if (mod(k+1,iplot).eq.0 .or. dtpsi.lt.tol) then
+     !    write(*,'(I6,5E12.4)') k+1,omega,Lambda,ratio,dtpsi/tol
+     ! end if
 
      if (ratio.le.0.05_rkind) then
         k=k+1
@@ -202,12 +207,16 @@ subroutine ADI_Solve_Current(psig,psi2)
         omega = omega/16._rkind
      end if
   end do
+  
+  call TotalCurrent(psi2,Lambda,I)
+  if (k >= ntsmax) then
+     print*, 'Maximum iterations reached without convergence for target I = ', I
+  else
+     print*, 'Converged after ', k, ' iterations for target I = ', I
+  end if
 
   LambdaSol = Lambda
-
-  print*, 'Lambda = ', LambdaSol
-  call TotalCurrent(psi2,Lambda,I)
-  print*, 'current = ', I
+  ! print*, 'Lambda = ', LambdaSol
   print*, 'psimax = ', maxval(psi2)
 
 end subroutine ADI_Solve_Current
@@ -246,7 +255,7 @@ subroutine ADI_Solve(psig,psi2)
   real(rkind) :: ratio
   real(rkind) :: dnrm2
 
-  relax = 1._rkind
+  relax = 0.8_rkind
 
   ! Maximum time step
   omegamax = 1.e-1_rkind
@@ -298,50 +307,55 @@ subroutine ADI_Solve(psig,psi2)
         ! updating time step
         omega = min(omega*4._rkind,omegamax)
         psimaxcur = maxval(psi2)
-        LambdaNew = Lambda/(psimaxcur/psimax)
-        dLambda = LambdaNew - Lambda
-        Lambda = Lambda + dLambda*relax
+        ! LambdaNew = Lambda/(psimaxcur/psimax)
+        ! dLambda = LambdaNew - Lambda
+        ! Lambda = Lambda + dLambda*relax
+        Lambda = Lambda - ((psimaxcur-psimax) / psimax) * Lambda * relax
      elseif (ratio.gt.0.05_rkind .and. ratio.le.0.1_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = min(omega*2._rkind,omegamax)
         psimaxcur = maxval(psi2)
-        LambdaNew = Lambda/(psimaxcur/psimax)
-        dLambda = LambdaNew - Lambda
-        Lambda = Lambda + dLambda*relax
+        ! LambdaNew = Lambda/(psimaxcur/psimax)
+        ! dLambda = LambdaNew - Lambda
+        ! Lambda = Lambda + dLambda*relax
+        Lambda = Lambda - ((psimaxcur-psimax) / psimax) * Lambda * relax
      elseif (ratio.gt.0.1_rkind .and. ratio.le.0.3_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         psimaxcur = maxval(psi2)
-        LambdaNew = Lambda/(psimaxcur/psimax)
-        dLambda = LambdaNew - Lambda
-        Lambda = Lambda + dLambda*relax
+        ! LambdaNew = Lambda/(psimaxcur/psimax)
+        ! dLambda = LambdaNew - Lambda
+        ! Lambda = Lambda + dLambda*relax
+        Lambda = Lambda - ((psimaxcur-psimax) / psimax) * Lambda * relax
      elseif (ratio.gt.0.3_rkind .and. ratio.le.0.4_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = omega/2._rkind
         psimaxcur = maxval(psi2)
-        LambdaNew = Lambda/(psimaxcur/psimax)
-        dLambda = LambdaNew - Lambda
-        Lambda = Lambda + dLambda*relax
+        ! LambdaNew = Lambda/(psimaxcur/psimax)
+        ! dLambda = LambdaNew - Lambda
+        ! Lambda = Lambda + dLambda*relax
+        Lambda = Lambda - ((psimaxcur-psimax) / psimax) * Lambda * relax
      elseif (ratio.gt.0.4_rkind .and. ratio.le.0.6_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = omega/4._rkind
         psimaxcur = maxval(psi2)
-        LambdaNew = Lambda/(psimaxcur/psimax)
-        dLambda = LambdaNew - Lambda
-        Lambda = Lambda + dLambda*relax
+        ! LambdaNew = Lambda/(psimaxcur/psimax)
+        ! dLambda = LambdaNew - Lambda
+        ! Lambda = Lambda + dLambda*relax
+        Lambda = Lambda - ((psimaxcur-psimax) / psimax) * Lambda * relax
      elseif (ratio.gt.0.6_rkind) then
         ! updating time step without changing the starting field
         omega = omega/16._rkind
      end if
   end do
 
-  Lambdasol = Lambda
+  LambdaSol = Lambda
 
   print*, 'Lambda = ', LambdaSol
 
@@ -587,9 +601,16 @@ subroutine readnamelist
   ! By default 0, in that case is not used
   LambdaNL = 0._rkind
 
-  ! Polynomial defining pprime
+  ! Parameters Defining Pprime as a function of psi
+  pp_p(1) = 130._rkind
+  pp_p(2) = 2.3_rkind
+
+  ! Polynomial defining Pprime as a function of s
   AP_NL = 0._rkind
-  AP_NL(1) = 1._rkind
+  AP_NL(1) = 0._rkind
+  AP_NL(2) = 0.5_rkind
+  AP_NL(3) = -1._rkind
+  AP_NL(4) = 0.5_rkind
 
   ! iplot for not printing everytime
   iplot = 50
@@ -604,7 +625,7 @@ subroutine readnamelist
   ! define namelist
   namelist /frc/ &
        &   nr,nz,length,psiedge,ntsmax,tol,omegai, &
-       &  psimax,guesstype,LambdaNL,AP_NL,iplot, &
+       &  psimax,guesstype,LambdaNL,pp_p,AP_NL,iplot, &
        &  CurrentTarget, npsi, ntheta
 
   ! read namelist

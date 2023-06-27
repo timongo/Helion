@@ -36,5 +36,5 @@ Vprime_060 = np.mean(J_060[:,:-1],axis=1); Vprime_070 = np.mean(J_070[:,:-1],axi
 plt.figure(5); plt.clf()
 px.Plot(S_060,P_060*Vprime_060**(5/3),lw=2,label='psiedge = -0.60')
 px.Plot(S_070,P_070*Vprime_070**(5/3),lw=2,label='psiedge = -0.70')
-plt.xlabel('$S$'); plt.ylabel('$PV\'^{5/3}$')
+plt.xlabel('$s$'); plt.ylabel('$PV\'^{5/3}$')
 plt.legend()

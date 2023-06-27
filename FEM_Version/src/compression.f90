@@ -13,11 +13,9 @@ subroutine Compress
   use sizes_indexing
   use globals
   implicit none
-  integer, parameter :: max_iter = 50
-  real(rkind), parameter :: tol_comp = 1.0e-4
   real(rkind), dimension(npsi) :: S, psi, P, Vprime, P_oldV_old, PV
   real(rkind), dimension(npsi,ntheta+1) :: ZMesh,RMesh,JacobMesh
-  real(rkind) :: delta_psiedge
+  real(rkind) :: PV_DiffNorm
   integer :: iter
 
   write(*, *) 'Solving with psiedge = ', psiedge
@@ -38,53 +36,49 @@ subroutine Compress
   psiedge = psiedge + delta_psiedge
   
   write(*, *) 'Solving with psiedge = ', psiedge
-
-  ! Calculate new psi, pressure, jacobian, Vprime  
+  
+  ! Compute psi, pressure, jacobian, Vprime for new psiedge
   call Initialize_Local
-  print*, "Initialize_Local has run"
-  call Run
+  call Run 
   call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
   call calculate_Vprime(JacobMesh, Vprime)
 
-  !Save new data for python
+  ! Update PV for the new psiedge
+  PV = P * Vprime**(5.0/3.0)
+  PV(npsi) = 0
+  call DiffNorm(npsi, P_oldV_old, PV, PV_DiffNorm)
+
+  ! Iterate until the relative error is below tol_comp
+  iter = 0
+  do while (iter < max_iter .and. PV_DiffNorm > tol_comp)
+     ! Compute the new pressure based on P_oldV_old^(5/3)
+     P = P_oldV_old / Vprime**(5.0/3.0)
+     P(npsi) = 0
+
+     ! Calculate new AP_NL and fit it
+     call calculate_AP_NL(psi, P, AP_NL)
+
+     ! Recompute psi, pressure, jacobian, Vprime for updated AP_NL
+     call Initialize_Local
+     call Run 
+     call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
+     call calculate_Vprime(JacobMesh, Vprime)
+
+     ! Update PV for the recomputed psi
+     PV = P * Vprime**(5.0/3.0)
+     PV(npsi) = 0
+     call DiffNorm(npsi, P_oldV_old, PV, PV_DiffNorm)
+
+     iter = iter + 1
+  end do
+  
   call Save_Local
 
-  ! Compute new PV^(5/3)
-  PV = P * Vprime**(5._rkind/3._rkind)
-  PV(npsi) = 0
-
-  ! ! Iterate until the relative error is below the tolerance
-  ! iter = 0
-  ! do while (norm2(PV - P_oldV_old) / norm2(P_oldV_old) > tol_comp)
-  !    ! Compute the new pressure based on P_oldV_old^(5/3)
-  !    P = P_oldV_old / Vprime**(5.0/3.0)
-  !    P(npsi) = 0
-  !    ! Calculate new AP_NL and fit it
-  !    call calculate_AP_NL(psi, P, AP_NL)
-
-  !    ! Recompute based on the updated AP_NL
-  !    call Initialize_Local
-  !    call Run 
-  !    call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
-  !    call calculate_Vprime(JacobMesh, Vprime)
-
-  !    ! Update PV for the recomputed psi
-  !    PV = P * Vprime**(5.0/3.0)
-  !    PV(npsi) = 0
-  !    ! Check the number of iterations
-  !    if (iter >= max_iter) then
-  !       exit
-  !    end if
-
-  !    iter = iter + 1
-  ! end do
-
-  ! if (iter >= max_iter) then
-  !    write(*, *) "Maximum iterations reached without convergence for psiedge =", psiedge
-  ! else
-  !    write(*, *) "Converged after ", iter, " iterations for psiedge =", psiedge
-  !    call Save_Local
-  ! end if
+  if (iter >= max_iter) then
+     write(*, *) "Maximum iterations reached without convergence for psiedge =", psiedge
+  else
+     write(*, *) "Converged after ", iter, " iterations for psiedge =", psiedge
+  end if
   
 end subroutine Compress
 
@@ -164,13 +158,9 @@ subroutine Initialize
 
   ! Read Pprime
 
-  ! Interpolate the guess to obtain a guess with size nws containing also the field derivatives 
-  if (guesstype.eq.1) then
-     call InterpolatePsi1(inds_g,inds_c)
-  elseif (guesstype.eq.2) then
-     call InterpolatePsi2(inds_g,inds_c)
-     call DeallocateArrays(inds_g)
-  end if
+  call InterpolatePsi2(inds_g,inds_c)
+  call DeallocateArrays(inds_g)
+  
 
   call PsiMaximum(inds_c,inds_c%PsiCur,rmax,psimaxval,.true.)  
 
@@ -265,12 +255,19 @@ subroutine ReadNamelist
   nrc = 32
 
   length = 1._rkind
+  
   ! psi at the boundary in R=1
   psiedge = -0.5_rkind
-  
+  ! increase in psiedge
+  delta_psiedge = -0.1_rkind
+
   ! max number of iterations
   ntsmax = 500
   tol = 1.e-8_rkind
+
+  ! max number of PV loops
+  max_iter = 50
+  tol_comp = 1.e-8_rkind
 
   ! order for gaussian quadratures
   gaussorder = 4
@@ -308,8 +305,8 @@ subroutine ReadNamelist
   ! define namelist
 
   namelist /frc/ &
-       &    nzc,nrc,nz,nr,length,psiedge,ntsmax,psimax, &
-       &    tol,gaussorder, nboundarypoints,relax,Itotal, &
+       &    nzc,nrc,nz,nr,length,psiedge,delta_psiedge,ntsmax,max_iter,psimax, &
+       &    tol,tol_comp,gaussorder,nboundarypoints,relax,Itotal, &
        &    npsi,ntheta, &
        &    guesstype, usepetsc, &
        &    LambdaNL, AP_NL
