@@ -8,7 +8,7 @@
  length = 10.,   
  psiedge = -0.5, ! must be negative, boundary condition, -0.5*B 
  psimax =  0.125, ! must be positive, target val 
- delta_psiedge = -0.02 !only for comp
+ delta_psiedge = -0.05 !only for comp
  AP_NL = 1.,0.,0.,0.,0.,0.,0.,0.,0.,0., ! polynomial describing Pprime as a function of s
  ntsmax = 1e3,  
  tol = 1.e-4,  
