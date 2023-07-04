@@ -1,23 +1,23 @@
  &frc
  nzc = 23, 
  nrc = 22, 
- nz = 53, 
- nr = 52, 
+ nz = 23, 
+ nr = 22, 
  guesstype = 2, ! 1: from FD, 2: from FE  
  usepetsc = .t., 
- length = 10.,  
- psimax =  0.125, ! must be positive 
- psiedge = -0.5, ! must be negative
- !delta_psiedge = -0.1
- AP_NL = 0.5,-2.0,-1.5,0.,0.,0.,0.,0.,0.,0., ! polynomial describing Pprime
- ntsmax = 1000,  
+ length = 10.,   
+ psiedge = -0.5, ! must be negative, boundary condition, -0.5*B 
+ psimax =  0.125, ! must be positive, target val 
+ delta_psiedge = -0.02 !only for comp
+ AP_NL = 1.,0.,0.,0.,0.,0.,0.,0.,0.,0., ! polynomial describing Pprime as a function of s
+ ntsmax = 1e3,  
  tol = 1.e-4,  
- !max_iter = 0
- !tol_comp = 1.e-4
+ max_iter = 5 !only for comp
+ tol_comp = 1.e-4 !only for comp
  gaussorder = 4, ! order for guassian quadratures
  nboundarypoints = 3, ! number of detected points for the plasma - vaccum boundary in each square patch
  relax = .2, ! percentage updated in new solution
- Itotal = 2.747, ! total current
+ Itotal = 2.747, ! total current, target val
  npsi = 300, 
  ntheta = 2048, 
 /

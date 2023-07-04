@@ -30,8 +30,6 @@ subroutine Compress
   P_oldV_old = P * Vprime**(5.0/3.0)
   P_oldV_old(npsi) = 0
  
-  ! delta_psiedge
-  delta_psiedge = -0.1_rkind
   ! Increase psiedge
   psiedge = psiedge + delta_psiedge
   
@@ -54,7 +52,7 @@ subroutine Compress
      ! Compute the new pressure based on P_oldV_old^(5/3)
      P = P_oldV_old / Vprime**(5.0/3.0)
      P(npsi) = 0
-
+     
      ! Calculate new AP_NL and fit it
      call calculate_AP_NL(psi, P, AP_NL)
 
@@ -423,7 +421,7 @@ function ppfun(psiv) result(result_val)
   integer :: i
 
   if (psiv <= psimax) then
-     s = sqrt(1 - psiv/psimax)
+     s = 1._rkind - psiv/psimax
   else
      s = 0
   end if
@@ -847,19 +845,19 @@ end subroutine calculate_Vprime
 
 subroutine calculate_AP_NL(psi, P, AP_NL)
   use prec_const
-  use globals, only : npsi
+  use globals, only : npsi, psimax
   implicit none
   
   ! Input parameters
   real(rkind), dimension(npsi), intent(in) :: psi
   real(rkind), dimension(npsi), intent(in) :: P
-  
-  ! Output parameter
+    
+  ! Output variables
   real(rkind), dimension(10), intent(out) :: AP_NL
   
   ! Local variables
-  real(rkind), dimension(npsi) :: Pprime
-  real(rkind), dimension(0:9) :: poly_coeffs
+  real(rkind), dimension(npsi) :: Pprime, s
+  !real(rkind), dimension(0:9) :: poly_coeffs
   integer :: i, j
   
   ! Calculate derivative of P with respect to psi
@@ -871,16 +869,105 @@ subroutine calculate_AP_NL(psi, P, AP_NL)
   Pprime(1) = (P(2) - P(1)) / (psi(2) - psi(1))
   Pprime(npsi) = (P(npsi) - P(npsi-1)) / (psi(npsi) - psi(npsi-1))
   
-  ! Fit Pprime to a 9th degree polynomial using polyfit
-  call polyfit(psi, Pprime, 9, poly_coeffs)
+  s = 1._rkind - psi/psimax
   
-  ! Store polynomial coefficients as AP_NL
-  do j = 0, 9
-    AP_NL(j+1) = poly_coeffs(j)
-  end do
-  
-end subroutine calculate_AP_NL
+  !print*, 'P: ', P
+  !print*, 'psi: ', psi
+  !print*, 'Pprime:', Pprime
+  !print*, 's: ',s
 
+  ! Fit Pprime to a 9th degree polynomial using polyfit
+  call polyfit(s, Pprime, 9, AP_NL)
+  
+  print*, 'AP_NL: ', AP_NL
+
+contains
+  subroutine polyfit(vx, vy, d, coeff)
+    use prec_const 
+    implicit none
+
+    integer, intent(in) :: d
+    real(rkind), dimension(:), intent(in) :: vx, vy
+    real(rkind), dimension(d+1), intent(out) :: coeff
+
+    real(rkind), dimension(:,:), allocatable :: X
+    real(rkind), dimension(:,:), allocatable :: XT_X
+    real(rkind), dimension(:), allocatable :: XT_y
+    real(rkind), dimension(d+1, d+1) :: A
+    real(rkind), dimension(d+1) :: b
+
+    integer :: i, j, n
+
+    n = size(vx)
+
+    allocate(X(n, d+1))
+    allocate(XT_X(d+1, d+1))
+    allocate(XT_y(d+1))
+
+    ! Prepare the design matrix X
+    do i = 0, d
+       X(:, i+1) = vx**i
+    end do
+
+    XT_X = matmul(transpose(X), X)
+    XT_y = matmul(transpose(X), vy)
+
+    ! Compute the coefficients using the method of least squares
+    A = 0.0
+    b = 0.0
+
+    do i = 1, d+1
+       do j = 1, d+1
+          A(i, j) = sum(XT_X(:, i) * XT_X(:, j))
+       end do
+
+       b(i) = sum(XT_y * XT_X(:, i))
+    end do
+
+    ! Solve the linear system A * coeff = b
+    call gauss_elimination(A, b, d+1, coeff)
+
+    ! Deallocate memory
+    deallocate(X)
+    deallocate(XT_X)
+    deallocate(XT_y)
+
+  end subroutine polyfit
+
+  subroutine gauss_elimination(A, b, n, x)
+    use prec_const
+    implicit none
+
+    integer, intent(in) :: n
+    real(rkind), dimension(n, n) :: A
+    real(rkind), dimension(n), intent(in) :: b
+    real(rkind), dimension(n), intent(out) :: x
+
+    real(rkind) :: factor
+    integer :: i, j, k
+
+    x = b
+
+    do k = 1, n-1
+       do i = k+1, n
+          factor = A(i, k) / A(k, k)
+          x(i) = x(i) - factor * x(k)
+          do j = k+1, n
+             A(i, j) = A(i, j) - factor * A(k, j)
+          end do
+       end do
+    end do
+
+    do k = n, 1, -1
+       x(k) = x(k) / A(k, k)
+       do i = k-1, 1, -1
+          x(i) = x(i) - A(i, k) * x(k)
+       end do
+    end do
+
+  end subroutine gauss_elimination
+
+end subroutine calculate_AP_NL
 
 subroutine Finalize
 #include <petsc/finclude/petsc.h>

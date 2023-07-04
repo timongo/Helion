@@ -6,7 +6,7 @@ program main
   call readnamelist
   call initialization  
   call run
-  ! call run_psimax
+  !call run_psimax
   call save
   call deallocate_arrays
 
@@ -54,8 +54,7 @@ subroutine run
   implicit none
   
   AP = AP_NL
-  ! call ADI_Solve_Current(psiguess,psi)
-  call ADI_Solve(psiguess,psi)
+  call ADI_Solve_Current(psiguess,psi)
 
   ! real(rkind), dimension(10) :: dAP
   ! real(rkind) :: norm
@@ -87,13 +86,14 @@ function ppfun(psiv) result(result_val)
   use globals, only : AP, psimax, pp_p
   implicit none
   real(rkind), intent(in) :: psiv
-  real(rkind) :: s, result_val
+  real(rkind) :: x, s, result_val
   integer :: i
   
   result_val = 0._rkind
 
-  if (0 <= psiv .and. psiv < psimax) then 
-     s = 1 - psiv/psimax
+  if (0 <= psiv .and. psiv <= psimax) then 
+     s = sqrt(1._rkind - psiv/psimax) ! roughly a function of r
+     ! x = psiv/psimax
      do i=1,10
         result_val = result_val + AP(i)*s**(i-1)
      end do  
@@ -162,9 +162,9 @@ subroutine ADI_Solve_Current(psig,psi2)
 
      dtpsi = N/(norm*omega)
      
-     ! if (mod(k+1,iplot).eq.0 .or. dtpsi.lt.tol) then
-     !    write(*,'(I6,5E12.4)') k+1,omega,Lambda,ratio,dtpsi/tol
-     ! end if
+     if (mod(k+1,iplot).eq.0 .or. dtpsi.lt.tol) then
+        write(*,'(I6,5E12.4)') k+1,omega,Lambda,ratio,dtpsi/tol
+     end if
 
      if (ratio.le.0.05_rkind) then
         k=k+1
@@ -582,8 +582,6 @@ subroutine readnamelist
   nr = 100
   ! aspect ratio length/radius
   length = 1._rkind
-  ! Psi boundary condition (default corresponds to unit field)
-  psiedge = -0.5_rkind
   
   ! maximum number of iterations
   ntsmax = 500
@@ -591,6 +589,9 @@ subroutine readnamelist
   tol = 1.e-8_rkind
   ! initial value of timestep in ADI algorithm
   omegai = 1.e-2_rkind
+
+  ! Psi boundary condition (default corresponds to unit field)
+  psiedge = -0.5_rkind
 
   ! psimax target on axis (not used yet)
   psimax = 0.05_rkind
@@ -624,7 +625,7 @@ subroutine readnamelist
 
   ! define namelist
   namelist /frc/ &
-       &   nr,nz,length,psiedge,ntsmax,tol,omegai, &
+       &  nr,nz,length,psiedge,ntsmax,tol,omegai, &
        &  psimax,guesstype,LambdaNL,pp_p,AP_NL,iplot, &
        &  CurrentTarget, npsi, ntheta
 

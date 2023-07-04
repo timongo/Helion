@@ -300,17 +300,16 @@ function ppfun(psiv) result(result_val)
   real(rkind) :: s, result_val
   integer :: i
 
-  if (psiv <= psimax) then
-     s = sqrt(1 - psiv/psimax)
-  else
-     s = 0
-  end if
-
   result_val = 0._rkind
-  do i=1,10
-     result_val = result_val + AP_NL(i)*s**(i-1)
-  end do
-     
+
+  if (0 <= psiv .and. psiv <= psimax) then
+     s = 1._rkind - psiv/psimax ! s is roughly a function of r^2
+     ! x = psiv/psimax
+     do i=1,10
+        result_val = result_val + AP_NL(i)*s**(i-1)
+     end do
+  end if
+   
 end function ppfun
 
 !   real(rkind) :: x,psiv,ppfun
