@@ -1,14 +1,84 @@
 program main
 
   call Initialize
-  
-  call Run
 
-  call Save
+  call Compress
 
   call Finalize
 
 end program main
+
+subroutine Compress
+  use prec_const
+  use sizes_indexing
+  use globals
+  implicit none
+  real(rkind), dimension(npsi) :: S, psi, P, Vprime, P_oldV_old, PV
+  real(rkind), dimension(npsi,ntheta+1) :: ZMesh,RMesh,JacobMesh
+  real(rkind) :: PV_DiffNorm
+  integer :: iter
+
+  write(*, *) 'Solving with psiedge = ', psiedge
+
+  ! Calculate initial psi, pressure, jacobian, Vprime    
+  call Run
+  call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
+  call calculate_Vprime(JacobMesh, Vprime)
+  call Save_Local
+
+  ! Compute initial PV^(5/3)
+  P_oldV_old = P * Vprime**(5.0/3.0)
+  P_oldV_old(npsi) = 0
+ 
+  ! Increase psiedge
+  psiedge = psiedge + delta_psiedge
+  
+  write(*, *) 'Solving with psiedge = ', psiedge
+  
+  ! Compute psi, pressure, jacobian, Vprime for new psiedge
+  call Initialize_Local
+  call Run 
+  call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
+  call calculate_Vprime(JacobMesh, Vprime)
+
+  ! Update PV for the new psiedge
+  PV = P * Vprime**(5.0/3.0)
+  PV(npsi) = 0
+  call DiffNorm(npsi, P_oldV_old, PV, PV_DiffNorm)
+
+  ! Iterate until the relative error is below tol_comp
+  iter = 0
+  do while (iter < max_iter .and. PV_DiffNorm > tol_comp)
+     ! Compute the new pressure based on P_oldV_old^(5/3)
+     P = P_oldV_old / Vprime**(5.0/3.0)
+     P(npsi) = 0
+     
+     ! Calculate new AP_NL and fit it
+     call calculate_AP_NL(psi, P, AP_NL)
+
+     ! Recompute psi, pressure, jacobian, Vprime for updated AP_NL
+     call Initialize_Local
+     call Run 
+     call Mesh(inds_r,LambdaFinal,inds_r%PsiFinal,npsi,ntheta,ZMesh,RMesh,JacobMesh,S,psi,P)
+     call calculate_Vprime(JacobMesh, Vprime)
+
+     ! Update PV for the recomputed psi
+     PV = P * Vprime**(5.0/3.0)
+     PV(npsi) = 0
+     call DiffNorm(npsi, P_oldV_old, PV, PV_DiffNorm)
+
+     iter = iter + 1
+  end do
+  
+  call Save_Local
+
+  if (iter >= max_iter) then
+     write(*, *) "Maximum iterations reached without convergence for psiedge =", psiedge
+  else
+     write(*, *) "Converged after ", iter, " iterations for psiedge =", psiedge
+  end if
+  
+end subroutine Compress
 
 subroutine Run
   use globals
@@ -40,6 +110,130 @@ subroutine Run
   end if
 end subroutine Run
 
+subroutine Initialize
+#include <petsc/finclude/petsc.h>
+  use globals
+  use petsc
+  implicit none
+  integer :: i
+  real(rkind), external  :: ppfun
+  real(rkind) :: Itot
+  real(rkind) :: rmax
+
+  PetscErrorCode :: ierr
+
+  call ReadNamelist
+
+  call Arrays(inds_c)
+  call Arrays(inds_r)
+
+  ! This matrix transforms the set of psi and its derivatives and the four corners of a patch into the array aij such that psi = sum_(i,j) aij Z**i R**j (Z and R going from 0 to 1 on a patch) 
+  call HermiteMatrix
+
+  ! Gives the answer to the question 'What is iR,iZ and field type if I know ind (from 1 to nws)?'
+  call Ind_to_iRiZ(inds_c)
+  call Ind_to_iRiZ(inds_r)
+
+  ! Gives the answer to the question 'What is ind (from 1 to nws) if I know iR,iZ and field type?'
+  call iRiZ_to_Ind(inds_c)
+  call iRiZ_to_Ind(inds_r)
+
+  ! Uses the Hermite matrix to compute all possible aij for all 16 base cases (4 locations on a patch times 4 field types)
+  call AllCoeffs(inds_c)
+  call AllCoeffs(inds_r)
+  
+  ! This sets the nkws values that are known due to the boundary conditions
+  call PsiBoundaryCondition(inds_c)
+  call PsiBoundaryCondition(inds_r)
+
+  ! Initialize petsc
+  call PetscInitialize(PETSC_NULL_CHARACTER,ierr)
+  PETSC_COMM_WORLD = MPI_COMM_WORLD
+  PETSC_COMM_SELF = MPI_COMM_SELF  
+
+  ! Read guess psi
+  call ReadGuess
+
+  ! Read Pprime
+
+  call InterpolatePsi2(inds_g,inds_c)
+  call DeallocateArrays(inds_g)
+  
+
+  call PsiMaximum(inds_c,inds_c%PsiCur,rmax,psimaxval,.true.)  
+
+  call TotalCurrent(inds_c,inds_c%PsiCur,ppfun,Itot_target)
+  Itot_target = Itot_target*LambdaIni
+
+  ! Computing beforehand all possible types of R**i/(R+a) integrals for matrix preparation
+  call AllRIntegrals(inds_c)
+  call AllRIntegrals(inds_r)
+
+  ! Computing all possible values for the matrix elements
+  call Aij_all(inds_c)
+  call Aij_all(inds_r)
+  ! Assembling the matrix as well as the boundary condition part of the right hand side
+  call SETUPAB(inds_c)
+  call SETUPAB(inds_r)
+
+  ilast = 1
+
+end subroutine Initialize
+
+subroutine Initialize_Local
+  use globals
+  implicit none
+  real(rkind), external  :: ppfun
+  real(rkind) :: Itot
+  real(rkind) :: rmax
+  real(rkind) :: lguess
+
+  ! This matrix transforms the set of psi and its derivatives and the four corners of a patch into the array aij such that psi = sum_(i,j) aij Z**i R**j (Z and R going from 0 to 1 on a patch) 
+  call HermiteMatrix
+  
+  ! Gives the answer to the question 'What is iR,iZ and field type if I know ind (from 1 to nws)?'
+  call Ind_to_iRiZ(inds_c)
+  call Ind_to_iRiZ(inds_r)
+
+  ! Gives the answer to the question 'What is ind (from 1 to nws) if I know iR,iZ and field type?'
+  call iRiZ_to_Ind(inds_c)
+  call iRiZ_to_Ind(inds_r)
+
+  ! Uses the Hermite matrix to compute all possible aij for all 16 base cases (4 locations on a patch times 4 field types)
+  call AllCoeffs(inds_c)
+  call AllCoeffs(inds_r)
+  
+  ! This sets the nkws values that are known due to the boundary conditions
+  call PsiBoundaryCondition(inds_c)
+  call PsiBoundaryCondition(inds_r)
+
+  ! Read guess psi
+  call ReadGuess_Local
+
+  ! Interpolate the guess to obtain a guess with size nws containing also the field derivatives 
+  call InterpolatePsi2(inds_g,inds_c)
+  call DeallocateArrays(inds_g)
+
+  call PsiMaximum(inds_c,inds_c%PsiCur,rmax,psimaxval,.true.)  
+
+  call TotalCurrent(inds_c,inds_c%PsiCur,ppfun,Itot_target)
+  Itot_target = Itot_target*LambdaIni
+
+  ! Computing beforehand all possible types of R**i/(R+a) integrals for matrix preparation
+  call AllRIntegrals(inds_c)
+  call AllRIntegrals(inds_r)
+
+  ! Computing all possible values for the matrix elements
+  call Aij_all(inds_c)
+  call Aij_all(inds_r)
+  ! Assembling the matrix as well as the boundary condition part of the right hand side
+  call SETUPAB(inds_c)
+  call SETUPAB(inds_r)
+
+  ilast = 1
+
+end subroutine Initialize_Local
+
 subroutine ReadNamelist
   use prec_const
   use globals
@@ -59,12 +253,19 @@ subroutine ReadNamelist
   nrc = 32
 
   length = 1._rkind
+  
   ! psi at the boundary in R=1
   psiedge = -0.5_rkind
-  
+  ! increase in psiedge
+  delta_psiedge = -0.1_rkind
+
   ! max number of iterations
   ntsmax = 500
   tol = 1.e-8_rkind
+
+  ! max number of PV loops
+  max_iter = 50
+  tol_comp = 1.e-8_rkind
 
   ! order for gaussian quadratures
   gaussorder = 4
@@ -102,8 +303,8 @@ subroutine ReadNamelist
   ! define namelist
 
   namelist /frc/ &
-       &    nzc,nrc,nz,nr,length,psiedge,ntsmax,psimax, &
-       &    tol,gaussorder, nboundarypoints,relax,Itotal, &
+       &    nzc,nrc,nz,nr,length,psiedge,delta_psiedge,ntsmax,max_iter,psimax, &
+       &    tol,tol_comp,gaussorder,nboundarypoints,relax,Itotal, &
        &    npsi,ntheta, &
        &    guesstype, usepetsc, &
        &    LambdaNL, AP_NL
@@ -129,87 +330,6 @@ subroutine ReadNamelist
   inds_c%hlength = hlength
 
 end subroutine ReadNamelist
-
-subroutine Initialize
-#include <petsc/finclude/petsc.h>
-  use globals
-  use petsc
-  implicit none
-  integer :: i
-  real(rkind) :: t0,t1
-  real(rkind), external  :: ppfun
-  real(rkind) :: Itot
-  real(rkind) :: rmax
-
-  PetscErrorCode :: ierr
-
-  call ReadNamelist
-
-  call Arrays(inds_c)
-  call Arrays(inds_r)
-
-  ! This matrix transforms the set of psi and its derivatives and the four corners of a patch into the array aij such that psi = sum_(i,j) aij Z**i R**j (Z and R going from 0 to 1 on a patch) 
-  call HermiteMatrix
-
-  ! Gives the answer to the question 'What is iR,iZ and field type if I know ind (from 1 to nws)?'
-  call Ind_to_iRiZ(inds_c)
-  call Ind_to_iRiZ(inds_r)
-
-  ! Gives the answer to the question 'What is ind (from 1 to nws) if I know iR,iZ and field type?'
-  call iRiZ_to_Ind(inds_c)
-  call iRiZ_to_Ind(inds_r)
-
-  ! Uses the Hermite matrix to compute all possible aij for all 16 base cases (4 locations on a patch times 4 field types)
-  call AllCoeffs(inds_c)
-  call AllCoeffs(inds_r)
-  
-  ! This sets the nkws values that are known due to the boundary conditions
-  call PsiBoundaryCondition(inds_c)
-  call PsiBoundaryCondition(inds_r)
-
-  ! Initialize petsc
-  call PetscInitialize(PETSC_NULL_CHARACTER,ierr)
-  PETSC_COMM_WORLD = MPI_COMM_WORLD
-  PETSC_COMM_SELF = MPI_COMM_SELF  
-
-  ! call cpu_time(t0)
-  ! call SETUPAB
-  ! call cpu_time(t1)
-
-  ! print*, (t1-t0)/24
-
-  ! Read guess psi
-  call ReadGuess
-
-  ! call ReadPprime
-
-  ! Interpolate the guess to obtain a guess with size nws containing also the field derivatives 
-  if (guesstype.eq.1) then
-     call InterpolatePsi1(inds_g,inds_c)
-  elseif (guesstype.eq.2) then
-     call InterpolatePsi2(inds_g,inds_c)
-     call DeallocateArrays(inds_g)
-  end if
-
-  call PsiMaximum(inds_c,inds_c%PsiCur,rmax,psimaxval,.true.)  
-
-  call TotalCurrent(inds_c,inds_c%PsiCur,ppfun,Itot_target)
-  Itot_target = Itot_target*LambdaIni
-
-  ! Computing beforehand all possible types of R**i/(R+a) integrals for matrix preparation
-  call AllRIntegrals(inds_c)
-  call AllRIntegrals(inds_r)
-
-  ! Computing all possible values for the matrix elements
-  call Aij_all(inds_c)
-  call Aij_all(inds_r)
-  ! Assembling the matrix as well as the boundary condition part of the right hand side
-  call SETUPAB(inds_c)
-  call SETUPAB(inds_r)
-
-  ilast = 1
-
-end subroutine Initialize
 
 subroutine Arrays(inds)
   use sizes_indexing
@@ -300,53 +420,18 @@ function ppfun(psiv) result(result_val)
   real(rkind) :: s, result_val
   integer :: i
 
-  result_val = 0._rkind
-
-  if (0 <= psiv .and. psiv <= psimax) then
-     s = 1._rkind - psiv/psimax ! s is roughly a function of r^2
-     ! x = psiv/psimax
-     do i=1,10
-        result_val = result_val + AP_NL(i)*s**(i-1)
-     end do
+  if (psiv <= psimax) then
+     s = 1._rkind - psiv/psimax
+  else
+     s = 0
   end if
-   
+
+  result_val = 0._rkind
+  do i=1,10
+     result_val = result_val + AP_NL(i)*s**(i-1)
+  end do
+     
 end function ppfun
-
-!   real(rkind) :: x,psiv,ppfun
-!   real(rkind), external :: seval
-
-!   integer :: i
-!   real(rkind) :: a1,b1,c1,d1
-
-!   ! x = psiv/psimaxval
-
-!   ! a1 = -0.1_rkind
-!   ! b1 = -0.10_rkind
-!   ! c1 = -0.1_rkind
-!   ! d1 = 1._rkind
-
-!   ! a1 = 0._rkind
-!   ! b1 = -0.15_rkind
-!   ! c1 = -0.4_rkind
-!   ! d1 = 1._rkind
-
-!   ! ppfun = a1*x**3 + b1*x**2 + c1*x + d1
-
-!   ! ppfun = 1._rkind
-
-  ! ppfun = 1._rkind
-
-!   ! ppfun = 0._rkind
-!   ! do i=1,npprime
-!      ! ppfun = ppfun + Apprime(i)*psi**(i-1)
-!   ! ppfun = d1/cosh(a1*psi-b1)**2
-!   ! end do
-
-!   ! ppfun = seval(npprime,psi,Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
-
-!   ppfun = 1._rkind
-
-! end function ppfun
 
 subroutine PsiBoundaryCondition(inds)
   ! This sets the nkws values that are known due to the boundary conditions
@@ -427,27 +512,6 @@ subroutine HermiteMatrix
   end do
 
 end subroutine HermiteMatrix
-
-subroutine Finalize
-#include <petsc/finclude/petsc.h>
-  use globals
-  use petsc
-  implicit none
-
-  PetscErrorCode :: ierr
-
-  call MatDestroy(inds_c%PAMat,ierr)
-  call MatDestroy(inds_r%PAMat,ierr)
-
-  call PetscFinalize(PETSC_NULL_CHARACTER,ierr)
-
-  call DeallocateArrays(inds_c)
-  call DeallocateArrays(inds_r)
-
-  ! deallocate(Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
-  ! deallocate(Apprime)
-
-end subroutine Finalize
 
 subroutine InterpolatePsi1(inds_g,inds)
   ! Transform a 2D psi array into an array adapted to the finite element
@@ -763,3 +827,165 @@ subroutine DiffNorm(n,x,y,norm)
   norm = norm2(y-x)/norm2(x)
 
 end subroutine DiffNorm
+
+subroutine calculate_Vprime(JacobMesh, Vprime)
+  use prec_const
+  use globals, only : npsi, ntheta
+  implicit none
+
+  real(rkind), dimension(npsi,ntheta+1), intent(in) :: JacobMesh
+  real(rkind), dimension(npsi), intent(out) :: Vprime
+
+  integer :: i
+
+  do i = 1, npsi
+     Vprime(i) = sum(JacobMesh(i, 1:ntheta)) / real(ntheta,rkind)
+  end do
+end subroutine calculate_Vprime
+
+subroutine calculate_AP_NL(psi, P, AP_NL)
+  use prec_const
+  use globals, only : npsi, psimax
+  implicit none
+  
+  ! Input parameters
+  real(rkind), dimension(npsi), intent(in) :: psi
+  real(rkind), dimension(npsi), intent(in) :: P
+    
+  ! Output variables
+  real(rkind), dimension(10), intent(out) :: AP_NL
+  
+  ! Local variables
+  real(rkind), dimension(npsi) :: Pprime, s
+  !real(rkind), dimension(0:9) :: poly_coeffs
+  integer :: i, j
+  
+  ! Calculate derivative of P with respect to psi
+  do i = 2, npsi-1
+    Pprime(i) = (P(i+1) - P(i-1)) / (psi(i+1) - psi(i-1))
+  end do
+  
+  ! Handle edge cases for Pprime at psi[1] and psi[npsi]
+  Pprime(1) = (P(2) - P(1)) / (psi(2) - psi(1))
+  Pprime(npsi) = (P(npsi) - P(npsi-1)) / (psi(npsi) - psi(npsi-1))
+  
+  s = 1._rkind - psi/psimax
+  
+  !print*, 'P: ', P
+  !print*, 'psi: ', psi
+  !print*, 'Pprime:', Pprime
+  !print*, 's: ',s
+
+  ! Fit Pprime to a 9th degree polynomial using polyfit
+  call polyfit(s, Pprime, 9, AP_NL)
+  
+  print*, 'AP_NL: ', AP_NL
+
+contains
+  subroutine polyfit(vx, vy, d, coeff)
+    use prec_const 
+    implicit none
+
+    integer, intent(in) :: d
+    real(rkind), dimension(:), intent(in) :: vx, vy
+    real(rkind), dimension(d+1), intent(out) :: coeff
+
+    real(rkind), dimension(:,:), allocatable :: X
+    real(rkind), dimension(:,:), allocatable :: XT_X
+    real(rkind), dimension(:), allocatable :: XT_y
+    real(rkind), dimension(d+1, d+1) :: A
+    real(rkind), dimension(d+1) :: b
+
+    integer :: i, j, n
+
+    n = size(vx)
+
+    allocate(X(n, d+1))
+    allocate(XT_X(d+1, d+1))
+    allocate(XT_y(d+1))
+
+    ! Prepare the design matrix X
+    do i = 0, d
+       X(:, i+1) = vx**i
+    end do
+
+    XT_X = matmul(transpose(X), X)
+    XT_y = matmul(transpose(X), vy)
+
+    ! Compute the coefficients using the method of least squares
+    A = 0.0
+    b = 0.0
+
+    do i = 1, d+1
+       do j = 1, d+1
+          A(i, j) = sum(XT_X(:, i) * XT_X(:, j))
+       end do
+
+       b(i) = sum(XT_y * XT_X(:, i))
+    end do
+
+    ! Solve the linear system A * coeff = b
+    call gauss_elimination(A, b, d+1, coeff)
+
+    ! Deallocate memory
+    deallocate(X)
+    deallocate(XT_X)
+    deallocate(XT_y)
+
+  end subroutine polyfit
+
+  subroutine gauss_elimination(A, b, n, x)
+    use prec_const
+    implicit none
+
+    integer, intent(in) :: n
+    real(rkind), dimension(n, n) :: A
+    real(rkind), dimension(n), intent(in) :: b
+    real(rkind), dimension(n), intent(out) :: x
+
+    real(rkind) :: factor
+    integer :: i, j, k
+
+    x = b
+
+    do k = 1, n-1
+       do i = k+1, n
+          factor = A(i, k) / A(k, k)
+          x(i) = x(i) - factor * x(k)
+          do j = k+1, n
+             A(i, j) = A(i, j) - factor * A(k, j)
+          end do
+       end do
+    end do
+
+    do k = n, 1, -1
+       x(k) = x(k) / A(k, k)
+       do i = k-1, 1, -1
+          x(i) = x(i) - A(i, k) * x(k)
+       end do
+    end do
+
+  end subroutine gauss_elimination
+
+end subroutine calculate_AP_NL
+
+subroutine Finalize
+#include <petsc/finclude/petsc.h>
+  use globals
+  use petsc
+  implicit none
+
+  PetscErrorCode :: ierr
+
+  call MatDestroy(inds_c%PAMat,ierr)
+  call MatDestroy(inds_r%PAMat,ierr)
+
+  call PetscFinalize(PETSC_NULL_CHARACTER,ierr)
+
+  call DeallocateArrays(inds_c)
+  call DeallocateArrays(inds_r)
+
+  ! deallocate(Xpprime,Ypprime,Bpprime,Cpprime,Dpprime)
+  ! deallocate(Apprime)
+
+end subroutine Finalize

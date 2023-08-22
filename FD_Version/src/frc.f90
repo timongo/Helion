@@ -4,76 +4,102 @@ program main
   implicit none
 
   call readnamelist
-
-  call initialization
-
-  call Run
-
+  call initialization  
+  call run
+  !call run_psimax
   call save
-
   call deallocate_arrays
 
 end program main
 
-subroutine Run
+subroutine run_psimax
+  use globals
+  implicit none
+
+  real(rkind) :: psimaxerror
+  integer :: iter, max_iter
+  real(rkind) :: step_factor
+  ! 'psimax', the target value, is read from nlfrc
+  
+  AP = AP_NL
+  step_factor = 0.8 ! multiplicative factor for step size adjustment
+  
+  iter = 0
+  max_iter = 50
+  psimaxerror = 2*tol
+  do while (iter < max_iter .and. abs(psimaxerror) >= tol)
+     call ADI_Solve_Current(psiguess,psi)
+     ! Update psiguess
+     psiguess = psi
+
+     ! Calculate the error in the maximum value of psi wrt target psimax
+     psimaxerror = maxval(psi) - psimax
+
+     ! Update CurrentTarget based on the error and step factor
+     CurrentTarget = CurrentTarget - (psimaxerror / psimax) * CurrentTarget * step_factor
+     
+     iter = iter + 1
+  end do
+
+  if (iter >= max_iter) then
+     print*, 'Maximum iterations reached without convergence for target psimax = ', psimax
+  else
+     print*, 'Converged after ', iter, ' iterations for target psimax = ', psimax
+  end if
+  
+end subroutine run_psimax
+
+subroutine run
   use globals
   implicit none
   
-  real(rkind), dimension(10) :: dAP
-  real(rkind) :: norm
-  integer :: i,n
+  AP = AP_NL
+  call ADI_Solve_Current(psiguess,psi)
 
-  dAP = AP_NL - AP_guess
+  ! real(rkind), dimension(10) :: dAP
+  ! real(rkind) :: norm
+  ! integer :: i,n
+  
+  ! dAP = AP_NL - AP_guess
 
-  call DiffNorm(10,AP_NL,AP_guess,norm)
+  ! call DiffNorm(10,AP_NL,AP_guess,norm)
 
-  if (norm.lt.0.05_rkind) then
-     AP = AP_NL
-     call ADI_Solve_Current(psiguess,psi)
-  else
-     n = int(norm*20._rkind)+1
-     write(*,'(A,I3,A)') 'Will try to reach the target in ',n,' steps'
-     do i=1,n
-        AP = AP_guess + dAP*real(i,rkind)/real(n,rkind)
-        write(*,'(A,10E12.4)') 'Solving with AP=',AP
-        call ADI_Solve_Current(psiguess,psi)
-        psiguess = psi
-     end do
-  end if
+  ! if (norm.lt.0.05_rkind) then
+  !    AP = AP_NL
+  !    call ADI_Solve_Current(psiguess,psi)
+  ! else
+  !    n = int(norm*20._rkind)+1
+  !    write(*,'(A,I3,A)') 'Will try to reach the target in ',n,' steps'
+  !    do i=1,n
+  !       AP = AP_guess + dAP*real(i,rkind)/real(n,rkind)
+  !       write(*,'(A,10E12.4)') 'Solving with AP=',AP
+  !       call ADI_Solve_Current(psiguess,psi)
+  !       psiguess = psi
+  !    end do
+  ! end if
+  
+end subroutine run
 
-end subroutine Run
-
-function ppfun(psiv)
+function ppfun(psiv) result(result_val)
   ! Pprime function in Grad-Shafranov equation
   use prec_const
-  use globals, only : psimaxcur,AP
-  real(rkind) :: psiv,ppfun,x
+  use globals, only : AP, psimax, pp_p
+  implicit none
+  real(rkind), intent(in) :: psiv
+  real(rkind) :: x, s, result_val
   integer :: i
   
-  x = psiv/psimaxcur
+  result_val = 0._rkind
 
-  ! a1 = -0.1_rkind
-  ! b1 = -0.2_rkind
-  ! c1 = .9_rkind
-  ! d1 = 0._rkind
+  if (0 <= psiv .and. psiv <= psimax) then 
+     s = sqrt(1._rkind - psiv/psimax) ! roughly a function of r
+     ! x = psiv/psimax
+     do i=1,10
+        result_val = result_val + AP(i)*s**(i-1)
+     end do  
+  end if
 
-  ppfun = 0._rkind
-  do i=1,10
-     ppfun = ppfun + AP(i)*x**(i-1)
-  end do
-
-  ! a1 = 170.64_rkind
-  ! b1 = 0.69919_rkind
-  ! d1 = 3.0156_rkind
-
-  ! a1 = 33.943_rkind
-  ! b1 = 0.25867_rkind
-  ! d1 = 0.920_rkind
-
-  ! ppfun = pprime
-  ! ppfun = d1/cosh(a1*psiv-b1)**2
-  ! ppfun = 1._rkind
-
+  ! result_val = 2.*pp_p(1)* tanh(pp_p(1)*psiv+pp_p(2)) / cosh(pp_p(1)*psiv+pp_p(2))**2
 end function ppfun
 
 subroutine ADI_Solve_Current(psig,psi2)
@@ -118,11 +144,8 @@ subroutine ADI_Solve_Current(psig,psi2)
 
   k = 0
   dtpsi = tol
-
-  print*, 'current = ', I0
-  ! print*, 'psitarget = ', psimax
-
-  do while (k.lt.ntsmax .and. dtpsi.ge.tol)
+  
+  do while (k.lt.ntsmax .and. dtpsi.ge.tol)   
      call ADI_Step_omp(omega,Lambda,psig,psi1)
      call ADI_Step_omp(omega,Lambda,psi1,psi2)
      call ADI_Step_omp(omega*2._rkind,Lambda,psig,psi2_star)
@@ -138,7 +161,7 @@ subroutine ADI_Solve_Current(psig,psi2)
      ratio = Nstar/N
 
      dtpsi = N/(norm*omega)
-
+     
      if (mod(k+1,iplot).eq.0 .or. dtpsi.lt.tol) then
         write(*,'(I6,5E12.4)') k+1,omega,Lambda,ratio,dtpsi/tol
      end if
@@ -184,12 +207,16 @@ subroutine ADI_Solve_Current(psig,psi2)
         omega = omega/16._rkind
      end if
   end do
+  
+  call TotalCurrent(psi2,Lambda,I)
+  if (k >= ntsmax) then
+     print*, 'Maximum iterations reached without convergence for target I = ', I
+  else
+     print*, 'Converged after ', k, ' iterations for target I = ', I
+  end if
 
   LambdaSol = Lambda
-
-  print*, 'Lambda = ', LambdaSol
-  call TotalCurrent(psi2,Lambda,I)
-  print*, 'current = ', I
+  ! print*, 'Lambda = ', LambdaSol
   print*, 'psimax = ', maxval(psi2)
 
 end subroutine ADI_Solve_Current
@@ -228,7 +255,7 @@ subroutine ADI_Solve(psig,psi2)
   real(rkind) :: ratio
   real(rkind) :: dnrm2
 
-  relax = 1._rkind
+  relax = 0.8_rkind
 
   ! Maximum time step
   omegamax = 1.e-1_rkind
@@ -248,15 +275,15 @@ subroutine ADI_Solve(psig,psi2)
 
   ! Do at least 2 iterations
   do while ((k.lt.ntsmax .and. dtpsi.ge.tol) .or. (k.lt.2))
-     ! Carrying out two half steps
+     ! Carrying out two steps of t = omega
      call ADI_Step_omp(omega,Lambda,psig,psi1)
      call ADI_Step_omp(omega,Lambda,psi1,psi2)
-     ! Carrying out one full step
+     ! Carrying out a double step of t = 2*omega
      call ADI_Step_omp(omega*2._rkind,Lambda,psig,psi2_star)
      
-     ! Computing |psig - psi1| in N
+     ! Computing |psig - psi2| in N
      call dcopy(ntot,psig,1,aux,1)
-     call daxpy(ntot,-1._rkind,psi1,1,aux,1)
+     call daxpy(ntot,-1._rkind,psi2,1,aux,1)
      N = dnrm2(ntot,aux,1)
 
      ! Computing |psi2 - psi2_star| in Nstar
@@ -280,50 +307,55 @@ subroutine ADI_Solve(psig,psi2)
         ! updating time step
         omega = min(omega*4._rkind,omegamax)
         psimaxcur = maxval(psi2)
-        LambdaNew = Lambda/(psimaxcur/psimax)
-        dLambda = LambdaNew - Lambda
-        Lambda = Lambda + dLambda*relax
+        ! LambdaNew = Lambda/(psimaxcur/psimax)
+        ! dLambda = LambdaNew - Lambda
+        ! Lambda = Lambda + dLambda*relax
+        Lambda = Lambda - ((psimaxcur-psimax) / psimax) * Lambda * relax
      elseif (ratio.gt.0.05_rkind .and. ratio.le.0.1_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = min(omega*2._rkind,omegamax)
         psimaxcur = maxval(psi2)
-        LambdaNew = Lambda/(psimaxcur/psimax)
-        dLambda = LambdaNew - Lambda
-        Lambda = Lambda + dLambda*relax
+        ! LambdaNew = Lambda/(psimaxcur/psimax)
+        ! dLambda = LambdaNew - Lambda
+        ! Lambda = Lambda + dLambda*relax
+        Lambda = Lambda - ((psimaxcur-psimax) / psimax) * Lambda * relax
      elseif (ratio.gt.0.1_rkind .and. ratio.le.0.3_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         psimaxcur = maxval(psi2)
-        LambdaNew = Lambda/(psimaxcur/psimax)
-        dLambda = LambdaNew - Lambda
-        Lambda = Lambda + dLambda*relax
+        ! LambdaNew = Lambda/(psimaxcur/psimax)
+        ! dLambda = LambdaNew - Lambda
+        ! Lambda = Lambda + dLambda*relax
+        Lambda = Lambda - ((psimaxcur-psimax) / psimax) * Lambda * relax
      elseif (ratio.gt.0.3_rkind .and. ratio.le.0.4_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = omega/2._rkind
         psimaxcur = maxval(psi2)
-        LambdaNew = Lambda/(psimaxcur/psimax)
-        dLambda = LambdaNew - Lambda
-        Lambda = Lambda + dLambda*relax
+        ! LambdaNew = Lambda/(psimaxcur/psimax)
+        ! dLambda = LambdaNew - Lambda
+        ! Lambda = Lambda + dLambda*relax
+        Lambda = Lambda - ((psimaxcur-psimax) / psimax) * Lambda * relax
      elseif (ratio.gt.0.4_rkind .and. ratio.le.0.6_rkind) then
         k = k+1
         call dcopy(ntot,psi2,1,psig,1)
         ! updating time step
         omega = omega/4._rkind
         psimaxcur = maxval(psi2)
-        LambdaNew = Lambda/(psimaxcur/psimax)
-        dLambda = LambdaNew - Lambda
-        Lambda = Lambda + dLambda*relax
+        ! LambdaNew = Lambda/(psimaxcur/psimax)
+        ! dLambda = LambdaNew - Lambda
+        ! Lambda = Lambda + dLambda*relax
+        Lambda = Lambda - ((psimaxcur-psimax) / psimax) * Lambda * relax
      elseif (ratio.gt.0.6_rkind) then
         ! updating time step without changing the starting field
         omega = omega/16._rkind
      end if
   end do
 
-  Lambdasol = Lambda
+  LambdaSol = Lambda
 
   print*, 'Lambda = ', LambdaSol
 
@@ -550,8 +582,6 @@ subroutine readnamelist
   nr = 100
   ! aspect ratio length/radius
   length = 1._rkind
-  ! Psi boundary condition (default corresponds to unit field)
-  psiedge = -0.5_rkind
   
   ! maximum number of iterations
   ntsmax = 500
@@ -559,6 +589,9 @@ subroutine readnamelist
   tol = 1.e-8_rkind
   ! initial value of timestep in ADI algorithm
   omegai = 1.e-2_rkind
+
+  ! Psi boundary condition (default corresponds to unit field)
+  psiedge = -0.5_rkind
 
   ! psimax target on axis (not used yet)
   psimax = 0.05_rkind
@@ -569,9 +602,16 @@ subroutine readnamelist
   ! By default 0, in that case is not used
   LambdaNL = 0._rkind
 
-  ! Polynomial defining pprime
+  ! Parameters Defining Pprime as a function of psi
+  pp_p(1) = 130._rkind
+  pp_p(2) = 2.3_rkind
+
+  ! Polynomial defining Pprime as a function of s
   AP_NL = 0._rkind
-  AP_NL(1) = 1._rkind
+  AP_NL(1) = 0._rkind
+  AP_NL(2) = 0.5_rkind
+  AP_NL(3) = -1._rkind
+  AP_NL(4) = 0.5_rkind
 
   ! iplot for not printing everytime
   iplot = 50
@@ -585,8 +625,8 @@ subroutine readnamelist
 
   ! define namelist
   namelist /frc/ &
-       &   nr,nz,length,psiedge,ntsmax,tol,omegai, &
-       &  psimax,guesstype,LambdaNL,AP_NL,iplot, &
+       &  nr,nz,length,psiedge,ntsmax,tol,omegai, &
+       &  psimax,guesstype,LambdaNL,pp_p,AP_NL,iplot, &
        &  CurrentTarget, npsi, ntheta
 
   ! read namelist
@@ -760,12 +800,14 @@ subroutine save
   mp = 101
 
   call openbin(mp,'FRC.bin','unformatted','write','big_endian')
+  ! bin file has the data
   open(mp+1, file = 'FRC.dat', FORM = 'formatted', action = 'write')
+  ! dat file names and shapes of arrays
 
-  call matwrtI1(mp,'nz',nz)
+  call matwrtI1(mp,'nz',nz) ! I --> Integer
   call matwrtI1(mp,'nr',nr)
-  call matwrtM1(mp,'length',length)
-  call matwrtM1(mp,'psiedge',psiedge)
+  call matwrtM1(mp,'length',length) ! M --> Real
+  call matwrtM1(mp,'psiedge',psiedge) 
 
   call matwrtM(mp,'Z',nztot,1,Z)
   call matwrtM(mp,'R',nrtot,1,R)
@@ -783,10 +825,10 @@ subroutine save
   call openbin(mp,'solution_guess_write_FD.bin','unformatted','write','big_endian')
   write(mp) nztot
   write(mp) nrtot
-  write(mp) length
-  write(mp) LambdaSol
+  write(mp) length ! Z/R (R is 1 at the top)
+  write(mp) LambdaSol 
   write(mp) psi
-  write(mp) AP_NL
+  write(mp) AP_NL ! Polynomial of psi/psi_max
   close(mp)
 
 end subroutine save

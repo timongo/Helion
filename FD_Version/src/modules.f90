@@ -32,6 +32,8 @@ module globals
   real(rkind), allocatable, dimension(:,:) :: psi
   real(rkind), allocatable, dimension(:,:) :: psiguess
   real(rkind), allocatable, dimension(:,:) :: psiguess_read
+  
+  real(rkind), dimension(2) :: pp_p
   real(rkind), dimension(10) :: AP
   real(rkind), dimension(10) :: AP_NL
   real(rkind), dimension(10) :: AP_guess

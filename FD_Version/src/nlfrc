@@ -1,17 +1,19 @@
  &frc
  nr = 100,
  nz = 101,
- length = 10.,
+ guesstype = 1,
  omegai = 1.e-6,
- !LambdaNL = 41.,
- ntsmax = 10000,
+ length = 10.,
+ psiedge = -0.5, ! must be negative, boundary condition, -0.5*B 
+ psimax = 0.05, ! must be positive, target val
+ !LambdaNL = 40.,
+ pp_p = 9.463,-1.0, ! Pprime as a function of psi
+ !AP_NL = 0.,0.,0.,0.,-1.,0.,0.,0.,0.,0., ! Pprime as a function of s
+ AP_NL = -1.,2.,0.,0.,0.,0.,0.,0.,0.,0., ! Pprime as a function of s
+ ntsmax = 1e4,
  tol = 1.e-8,
- !psimax = 0.06370773166418076,
- psimax = 0.124,
- guesstype=1,
- AP_NL = 1.,-0.4,-0.15,0.,0.,0.,0.,0.,0.,0.,
- iplot = 50,
- CurrentTarget = -10.,
+ iplot = 100,
+ CurrentTarget = -10., ! target val
  npsi = 300,
  ntheta = 2048
 /

@@ -53,7 +53,6 @@ subroutine Save
   !    call SaveMesh(mp,inds_c,inds_c%PsiFinal)
   ! end if
   
-
   close(mp)
   close(mp+1)
 
@@ -80,6 +79,65 @@ subroutine Save
   close(mp)
 
 end subroutine Save
+
+subroutine Save_Local
+  use globals
+  implicit none
+  integer :: mp
+  ! real(rkind) :: psimaxval
+  real(rkind), dimension(inds_c%nz,inds_c%nr) :: psi2d_c
+  real(rkind), dimension(inds_r%nz,inds_r%nr) :: psi2d_r
+  character(50) :: filename
+
+  mp = 101
+
+  write(filename, '(A,F4.2,A)') './Data/FRC_', abs(psiedge), '.bin'
+  call openbin(mp,filename,'unformatted','write','big_endian')
+  write(filename, '(A,F4.2,A)') './Data/FRC_', abs(psiedge), '.dat'
+  open(mp+1, file = filename, FORM = 'formatted', action = 'write')
+
+  call matwrtI1(mp,'nz',inds_r%nZ)
+  call matwrtI1(mp,'nr',inds_r%nR)
+  call matwrtI1(mp,'nws',inds_r%nws)
+  call matwrtI1(mp,'nkws',inds_r%nkws)
+  call matwrtI1(mp,'nzc',inds_c%nZ)
+  call matwrtI1(mp,'nrc',inds_c%nR)
+  call matwrtI1(mp,'nwsc',inds_c%nws)
+  call matwrtI1(mp,'nkwsc',inds_c%nkws)
+  call matwrtM1(mp,'length',inds_r%length)
+  call matwrtM1(mp,'psiedge',psiedge)
+
+  call matwrtM(mp,'Z_c',inds_c%nz,1,inds_c%Z)
+  call matwrtM(mp,'R_c',inds_c%nr,1,inds_c%R)
+  call matwrtM(mp,'RR_c',inds_c%nz,inds_c%nr,inds_c%RR)
+  call matwrtM(mp,'ZZ_c',inds_c%nz,inds_c%nr,inds_c%ZZ)
+  call ReconstructPsi(inds_c,inds_c%PsiFinal,psi2d_c)
+  call matwrtM(mp,'psi2d_c',inds_c%nz,inds_c%nr,psi2d_c)  
+
+  call matwrtM(mp,'Z',inds_r%nz,1,inds_r%Z)
+  call matwrtM(mp,'R',inds_r%nr,1,inds_r%R)
+  call matwrtM(mp,'RR',inds_r%nz,inds_r%nr,inds_r%RR)
+  call matwrtM(mp,'ZZ',inds_r%nz,inds_r%nr,inds_r%ZZ)
+  call ReconstructPsi(inds_r,inds_r%PsiFinal,psi2d_r)
+  call matwrtM(mp,'psi2d',inds_r%nz,inds_r%nr,psi2d_r)
+
+  call matwrtM1(mp,'LambdaSol',LambdaFinal)
+  call matwrtM(mp,'PsiSol_c',inds_c%nws,1,inds_c%PsiFinal)
+  call matwrtM(mp,'PsiSol',inds_r%nws,1,inds_r%PsiFinal)
+  call SaveMesh(mp,inds_r,inds_r%PsiFinal)
+
+  ! call matwrtM(mp,'S',npsi,1,S)
+  ! call matwrtM(mp,'PsiMesh',npsi,1,psi)
+  ! call matwrtM(mp,'Pressure',npsi,1,P)
+  ! call matwrtM1(mp,'psimax',psi(1))
+  ! call matwrtM(mp,'ZMesh',npsi,ntheta+1,ZMesh)
+  ! call matwrtM(mp,'RMesh',npsi,ntheta+1,RMesh)
+  ! call matwrtM(mp,'JacobMesh',npsi,ntheta+1,JacobMesh)
+
+  close(mp)
+  close(mp+1)
+
+end subroutine Save_Local
 
 subroutine ReconstructPsi(inds,Psi,psi2d)
   use prec_const
@@ -119,9 +177,9 @@ subroutine SaveMesh(mp,inds,Psi)
   real(rkind), dimension(npsi) :: SMesh,PsiMesh,PressureMesh
   real(rkind), dimension(npsi,ntheta+1) :: ZMesh,RMesh,JacobMesh
 
-  call Mesh(inds,LambdaFinal,Psi,npsi,ntheta,ZMesh,RMesh,JacobMesh,Smesh,PsiMesh,PressureMesh)
+  call Mesh(inds,LambdaFinal,Psi,npsi,ntheta,ZMesh,RMesh,JacobMesh,SMesh,PsiMesh,PressureMesh)
   
-  call matwrtM(mp,'S',npsi,1,Smesh)
+  call matwrtM(mp,'S',npsi,1,SMesh)
   call matwrtM(mp,'PsiMesh',npsi,1,PsiMesh)
   call matwrtM(mp,'Pressure',npsi,1,PressureMesh)
   call matwrtM1(mp,'psimax',Psimesh(1))
@@ -205,6 +263,35 @@ subroutine ReadGuess
   end if
 
 end subroutine ReadGuess
+
+subroutine ReadGuess_Local
+  use prec_const
+  use globals
+  implicit none
+  real(rkind) :: lguess
+  
+  inds_g%nZ = inds_r%nZ
+  inds_g%nR = inds_r%nR
+  lguess = inds_r%length
+  inds_g%length = lguess
+  inds_g%hlength = 0.5_rkind*lguess     
+  LambdaIni = LambdaFinal
+  inds_g%PsiCur = inds_r%PsiFinal
+
+  call Arrays(inds_g)
+  call Ind_to_iRiZ(inds_g)
+  call iRiZ_to_Ind(inds_g)
+  call PsiBoundaryCondition(inds_g)
+
+  inds_g%deltaz = 1._rkind/real(inds_g%nZ-1,rkind)*lguess
+  inds_g%deltar = 1._rkind/real(inds_g%nR-1,rkind)
+
+  ! if LambdaNL (NL=namelist) is non zero, replace LambdaIni with LambdaNL
+  if (LambdaNL.gt.0_rkind) then
+     LambdaIni = LambdaNL
+  end if
+
+end subroutine ReadGuess_Local
 
 subroutine ReadPprime
   use globals
