@@ -1,0 +1,3 @@
+FD and FEM work.
+
+The FEM code to go from psi_edge to psi_edge + delta, while preserving the adiabatic invariant runs but it doesn't converge to a result.
